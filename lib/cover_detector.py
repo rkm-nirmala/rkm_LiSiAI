@@ -9,6 +9,94 @@ from PIL import Image, UnidentifiedImageError
 MAX_FRAME_PIXELS = 320 * 240
 
 
+def _corner_angle(first, vertex, last):
+    first_vector = np.array(first, dtype=np.float32) - vertex
+    last_vector = np.array(last, dtype=np.float32) - vertex
+    denominator = np.linalg.norm(first_vector) * np.linalg.norm(last_vector)
+    if denominator == 0:
+        return 0
+    cosine = np.clip(np.dot(first_vector, last_vector) / denominator, -1, 1)
+    return float(np.degrees(np.arccos(cosine)))
+
+
+def _find_cover_corners(gray):
+    height, width = gray.shape
+    frame_area = width * height
+    edges = cv2.Canny(gray, 45, 135)
+    contours, _hierarchy = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    candidates = []
+
+    for contour in contours:
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter == 0:
+            continue
+        polygon = cv2.approxPolyDP(contour, 0.025 * perimeter, True)
+        if len(polygon) != 4 or not cv2.isContourConvex(polygon):
+            continue
+
+        corners = polygon.reshape(4, 2).astype(np.float32)
+        area = abs(cv2.contourArea(corners))
+        if not frame_area * 0.18 <= area <= frame_area * 0.92:
+            continue
+
+        angles = [
+            _corner_angle(corners[(index - 1) % 4], corners[index], corners[(index + 1) % 4])
+            for index in range(4)
+        ]
+        if min(angles) < 55 or max(angles) > 125:
+            continue
+
+        sides = [
+            float(np.linalg.norm(corners[(index + 1) % 4] - corners[index]))
+            for index in range(4)
+        ]
+        width_estimate = (sides[0] + sides[2]) / 2
+        height_estimate = (sides[1] + sides[3]) / 2
+        aspect_ratio = width_estimate / height_estimate if height_estimate else 0
+        if not 0.4 <= aspect_ratio <= 1.4:
+            continue
+
+        candidates.append((area, corners))
+
+    if not candidates:
+        return None
+
+    _area, corners = max(candidates, key=lambda candidate: candidate[0])
+    ordered = np.zeros((4, 2), dtype=np.float32)
+    sums = corners.sum(axis=1)
+    differences = np.diff(corners, axis=1).reshape(-1)
+    ordered[0] = corners[np.argmin(sums)]
+    ordered[2] = corners[np.argmax(sums)]
+    ordered[1] = corners[np.argmin(differences)]
+    ordered[3] = corners[np.argmax(differences)]
+    return ordered
+
+
+def _rectify_cover(gray, corners):
+    top_left, top_right, bottom_right, bottom_left = corners
+    cover_width = max(
+        np.linalg.norm(bottom_right - bottom_left),
+        np.linalg.norm(top_right - top_left),
+    )
+    cover_height = max(
+        np.linalg.norm(top_right - bottom_right),
+        np.linalg.norm(top_left - bottom_left),
+    )
+    target_width = max(1, round(cover_width))
+    target_height = max(1, round(cover_height))
+    destination = np.array(
+        [
+            [0, 0],
+            [target_width - 1, 0],
+            [target_width - 1, target_height - 1],
+            [0, target_height - 1],
+        ],
+        dtype=np.float32,
+    )
+    transform = cv2.getPerspectiveTransform(corners, destination)
+    return cv2.warpPerspective(gray, transform, (target_width, target_height))
+
+
 def _overlap_ratio(first, second):
     left = max(first[0], second[0])
     top = max(first[1], second[1])
@@ -119,7 +207,16 @@ def detect_text_regions(image_bytes):
 
     image = cv2.GaussianBlur(image, (3, 3), 0)
     if float(np.std(image)) < 7:
-        return {"text_detected": False, "text_lines": 0}
+        return {"cover_detected": False, "text_detected": False, "text_lines": 0}
 
-    line_count = _text_line_count(_text_character_boxes(image))
-    return {"text_detected": line_count > 0, "text_lines": line_count}
+    corners = _find_cover_corners(image)
+    if corners is None:
+        return {"cover_detected": False, "text_detected": False, "text_lines": 0}
+
+    cover = _rectify_cover(image, corners)
+    line_count = _text_line_count(_text_character_boxes(cover))
+    return {
+        "cover_detected": True,
+        "text_detected": line_count > 0,
+        "text_lines": line_count,
+    }

@@ -5,7 +5,7 @@
 {% block content %}
   <section class="page-heading">
     <h1>Scan sampul buku</h1>
-    <p>Arahkan sampul ke kamera. Gambar akan diambil otomatis setelah OpenCV mendeteksi teks.</p>
+    <p>Arahkan sampul buku ke kamera. Kami menunggu bentuk sampul dan teks terdeteksi sebelum mengambil foto.</p>
   </section>
   <section class="scanner-grid">
     <div class="panel scanner-panel">
@@ -49,7 +49,7 @@
     let previewUrl;
     let captureInProgress = false;
     let detectionInProgress = false;
-    let consecutiveTextFrames = 0;
+    let consecutiveBookFrames = 0;
     let autoCapture = true;
 
     function stopCamera() {
@@ -76,17 +76,18 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Deteksi teks gagal.");
 
-        consecutiveTextFrames = result.text_detected ? consecutiveTextFrames + 1 : 0;
-        if (consecutiveTextFrames >= 3) {
-          status.textContent = "Teks terdeteksi. Mengambil foto sampul...";
+        const bookDetected = result.cover_detected && result.text_detected;
+        consecutiveBookFrames = bookDetected ? consecutiveBookFrames + 1 : 0;
+        if (consecutiveBookFrames >= 3) {
+          status.textContent = "Sampul buku terdeteksi. Mengambil foto...";
           await captureImage();
           return;
         }
-        status.textContent = result.text_detected
-          ? "Pola teks terdeteksi. Tahan posisi kamera..."
-          : "Arahkan sampul ke kamera. Menunggu teks terdeteksi...";
+        status.textContent = bookDetected
+          ? "Sampul dan teks terdeteksi. Tahan posisi kamera..."
+          : "Pastikan seluruh sampul terlihat dan teksnya jelas.";
       } catch (error) {
-        consecutiveTextFrames = 0;
+        consecutiveBookFrames = 0;
         status.textContent = `Deteksi lokal tidak tersedia: ${error.message}`;
       } finally {
         detectionInProgress = false;
@@ -156,7 +157,7 @@
       textField.value = "";
       askButton.disabled = true;
       aiResult.textContent = "";
-      consecutiveTextFrames = 0;
+      consecutiveBookFrames = 0;
       detectionInProgress = false;
       autoCapture = true;
       status.textContent = "Membuka kamera...";
