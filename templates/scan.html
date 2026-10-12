@@ -6,12 +6,18 @@
   <section class="page-heading">
     <p class="eyebrow">Ekstraksi teks</p>
     <h1>Scan sampul buku</h1>
-    <p>Pilih gambar sampul. Gambar akan dikirim ke <code>/ocr</code>; pemrosesan Tesseract belum tersedia.</p>
+    <p>Pilih gambar sampul untuk mengekstrak teks menggunakan Tesseract OCR.</p>
   </section>
   <section class="panel">
     <form id="scan-form">
       <label for="image">Gambar sampul</label>
       <input id="image" name="image" type="file" accept="image/*" required>
+      <label for="language">Bahasa teks</label>
+      <select id="language" name="language">
+        <option value="ind+eng">Indonesia + Inggris</option>
+        <option value="ind">Indonesia</option>
+        <option value="eng">Inggris</option>
+      </select>
       <button class="button" type="submit">Kirim gambar</button>
     </form>
     <pre id="scan-result" class="result" aria-live="polite"></pre>
@@ -29,7 +35,10 @@
           body: new FormData(form),
         });
         const body = await response.json();
-        result.textContent = body.error || body.message || JSON.stringify(body);
+        if (!response.ok) throw new Error(body.error || "OCR gagal.");
+        result.textContent = body.text
+          ? `Teks: ${body.text}\nBahasa: ${body.language}\nKeyakinan rata-rata: ${body.confidence ?? "tidak tersedia"}%`
+          : "Tidak ada teks yang terdeteksi pada gambar.";
       } catch (error) {
         result.textContent = `Gagal mengirim gambar: ${error.message}`;
       }

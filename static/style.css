@@ -180,6 +180,7 @@ label {
 }
 
 input[type="file"],
+select,
 textarea {
   width: 100%;
   padding: 0.75rem;
