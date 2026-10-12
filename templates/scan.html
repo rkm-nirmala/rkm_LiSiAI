@@ -3,38 +3,79 @@
 {% block title %}Scan sampul · LiSiAI{% endblock %}
 
 {% block content %}
-  <section class="page-heading">
-    <h1>Scan sampul buku</h1>
-    <p>Arahkan sampul buku ke kamera. Kami menunggu bentuk sampul dan teks terdeteksi sebelum mengambil foto.</p>
-  </section>
-  <section class="scanner-grid">
-    <div class="panel scanner-panel">
-      <div class="camera-view">
-        <video id="camera" autoplay muted playsinline aria-label="Tampilan kamera untuk scan sampul"></video>
-        <div id="camera-guide" class="camera-guide" aria-hidden="true"></div>
-        <canvas id="detection-overlay" aria-hidden="true"></canvas>
-        <img id="captured-preview" alt="Foto sampul yang diambil" hidden>
+  <div class="theme-page scan-page">
+    <a href="/dashboard" class="back-link">← Kembali ke Dashboard</a>
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Image capture · LibraScan</p>
+        <h1>Scan Cover</h1>
+        <p class="subtitle">Arahkan sampul buku ke kamera. Saat teks terdeteksi dan gambar stabil, foto akan diambil otomatis.</p>
       </div>
-      <p id="camera-status" class="camera-status" role="status" aria-live="polite">Membuka kamera...</p>
-      <div class="camera-actions">
-        <button id="capture" class="button button-secondary" type="button" disabled>Ambil gambar sekarang</button>
-        <button id="retake" class="button button-secondary" type="button" hidden>Foto ulang</button>
+    </header>
+
+    <section class="scan-grid">
+      <div class="panel camera-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Preview Kamera</h2>
+            <p id="camera-heading-status">Membuka kamera...</p>
+          </div>
+          <span id="camera-indicator" class="camera-indicator" aria-label="Status kamera"></span>
+        </div>
+        <div class="camera-frame">
+          <video id="camera" autoplay muted playsinline aria-label="Tampilan kamera untuk scan sampul"></video>
+          <div id="camera-guide" class="camera-guide" aria-hidden="true"></div>
+          <canvas id="detection-overlay" aria-hidden="true"></canvas>
+          <img id="captured-preview" alt="Foto sampul yang diambil" hidden>
+          <div id="capture-countdown" class="capture-countdown" aria-live="assertive" hidden></div>
+          <div id="capture-flash" class="capture-flash" aria-hidden="true"></div>
+        </div>
+        <canvas id="capture-canvas" hidden></canvas>
+        <div class="detection-status" aria-live="polite">
+          <span id="detection-dot" class="detection-dot"></span>
+          <span id="camera-status" class="camera-status">Membuka kamera...</span>
+        </div>
+        <div class="camera-actions">
+          <button id="capture" class="button button-secondary" type="button" disabled>● Ambil Manual</button>
+          <button id="retake" class="button" type="button" hidden>↻ Ulangi Scan</button>
+        </div>
       </div>
-    </div>
-    <div class="panel results-panel">
-      <label for="extracted-text">Hasil teks — bisa diedit</label>
-      <textarea id="extracted-text" name="text" rows="7" placeholder="Hasil bacaan sampul akan muncul di sini." autocomplete="off"></textarea>
-      <button id="ask-ai" class="button" type="button" disabled>Tanya AI</button>
-      <p id="ai-result" class="ai-result" role="status" aria-live="polite"></p>
-    </div>
-  </section>
-  <canvas id="capture-canvas" hidden></canvas>
+
+      <div class="panel ocr-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Hasil OCR</h2>
+            <p>Teks yang dibaca dari sampul buku</p>
+          </div>
+          <span id="ocr-badge" class="ocr-badge">BELUM AKTIF</span>
+        </div>
+        <div class="ocr-content">
+          <label for="extracted-text" class="ocr-label">Teks hasil pembacaan</label>
+          <textarea id="extracted-text" name="text" rows="8" placeholder="Hasil OCR akan muncul setelah gambar diproses..." autocomplete="off"></textarea>
+          <p class="edit-hint">Periksa atau edit teks sebelum meminta analisis AI.</p>
+          <button id="ask-ai" class="button" type="button" disabled>✦ Tanya AI</button>
+        </div>
+        <div class="ai-output-wrap">
+          <h3>Analisis AI</h3>
+          <div id="ai-result" class="ai-result" aria-live="polite">Analisis AI akan ditampilkan di sini.</div>
+        </div>
+        <div id="ocr-footer" class="ocr-footer"><span class="ocr-status-dot"></span> OCR belum dijalankan</div>
+      </div>
+    </section>
+  </div>
   <script>
     const video = document.querySelector("#camera");
     const overlay = document.querySelector("#detection-overlay");
     const preview = document.querySelector("#captured-preview");
     const guide = document.querySelector("#camera-guide");
     const status = document.querySelector("#camera-status");
+    const headingStatus = document.querySelector("#camera-heading-status");
+    const cameraIndicator = document.querySelector("#camera-indicator");
+    const detectionDot = document.querySelector("#detection-dot");
+    const countdown = document.querySelector("#capture-countdown");
+    const flash = document.querySelector("#capture-flash");
+    const ocrBadge = document.querySelector("#ocr-badge");
+    const ocrFooter = document.querySelector("#ocr-footer");
     const captureButton = document.querySelector("#capture");
     const retakeButton = document.querySelector("#retake");
     const askButton = document.querySelector("#ask-ai");
@@ -55,7 +96,15 @@
     let consecutiveBookFrames = 0;
     let previousFrame;
     let stableSince = 0;
+    let countdownTimer;
+    let countdownValue = 0;
     let autoCapture = true;
+
+    function setStatus(message, state = "waiting") {
+      status.textContent = message;
+      headingStatus.textContent = message;
+      detectionDot.className = `detection-dot ${state}`;
+    }
 
     function stopCamera() {
       cameraStream?.getTracks().forEach((track) => track.stop());
@@ -116,6 +165,29 @@
       return totalDifference / currentFrame.length;
     }
 
+    function cancelCountdown() {
+      window.clearInterval(countdownTimer);
+      countdownTimer = null;
+      countdownValue = 0;
+      countdown.hidden = true;
+    }
+
+    function startCaptureCountdown() {
+      if (countdownTimer) return;
+      countdownValue = 3;
+      countdown.textContent = countdownValue;
+      countdown.hidden = false;
+      countdownTimer = window.setInterval(() => {
+        countdownValue -= 1;
+        if (countdownValue <= 0) {
+          cancelCountdown();
+          captureImage();
+          return;
+        }
+        countdown.textContent = countdownValue;
+      }, 1000);
+    }
+
     async function inspectFrame() {
       if (!autoCapture || captureInProgress || detectionInProgress) return;
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -152,24 +224,29 @@
         }
 
         if (consecutiveBookFrames >= 3 && now - stableSince >= 1400) {
-          status.textContent = "Teks terdeteksi dan gambar stabil. Mengambil foto...";
-          await captureImage();
-          return;
+          startCaptureCountdown();
+        } else {
+          cancelCountdown();
         }
-        status.textContent = textDetected
-          ? difference >= 8
-            ? "Teks terlihat. Tahan kamera agar gambar stabil..."
-            : result.cover_detected
-              ? "Sampul dan teks terdeteksi. Menunggu gambar stabil..."
-              : "Teks terdeteksi tanpa garis sampul. Menunggu gambar stabil..."
-          : result.text_lines > 0
-            ? "Pola teks terlihat. Jika tepi sampul tidak terbaca, pastikan minimal dua baris teks terlihat."
-            : "Belum terdeteksi. Garis hijau menandai sampul, kotak kuning menandai teks.";
+        if (countdownTimer) {
+          setStatus(`Teks terdeteksi dan stabil. Foto diambil dalam ${countdownValue} detik...`, "detected");
+        } else {
+          setStatus(textDetected
+            ? difference >= 8
+              ? "Teks terlihat. Tahan kamera agar gambar stabil..."
+              : result.cover_detected
+                ? "Sampul dan teks terdeteksi. Menunggu gambar stabil..."
+                : "Teks terdeteksi tanpa garis sampul. Menunggu gambar stabil..."
+            : result.text_lines > 0
+              ? "Pola teks terlihat. Jika tepi sampul tidak terbaca, pastikan minimal dua baris teks terlihat."
+              : "Belum terdeteksi. Garis hijau menandai sampul, kotak kuning menandai teks.",
+            textDetected ? "detected" : "waiting");
+        }
       } catch (error) {
         consecutiveBookFrames = 0;
         stableSince = 0;
         drawDetections({});
-        status.textContent = `Deteksi lokal tidak tersedia: ${error.message}`;
+        setStatus(`Deteksi lokal tidak tersedia: ${error.message}`, "error");
       } finally {
         detectionInProgress = false;
       }
@@ -182,12 +259,16 @@
       captureInProgress = true;
       autoCapture = false;
       captureButton.disabled = true;
-      status.textContent = "Menyiapkan foto sampul...";
+      cancelCountdown();
+      setStatus("Menyiapkan foto sampul...", "detected");
 
       const scale = Math.min(1, 1600 / video.videoWidth);
       canvas.width = Math.round(video.videoWidth * scale);
       canvas.height = Math.round(video.videoHeight * scale);
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      flash.classList.remove("active");
+      void flash.offsetWidth;
+      flash.classList.add("active");
 
       try {
         const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
@@ -202,9 +283,14 @@
         guide.hidden = true;
         captureButton.hidden = true;
         retakeButton.hidden = false;
+        cameraIndicator.classList.remove("active");
+        cameraIndicator.classList.add("offline");
         stopCamera();
 
-        status.textContent = "Foto diambil. Sedang membaca teks...";
+        ocrBadge.textContent = "MEMPROSES";
+        ocrBadge.className = "ocr-badge processing";
+        ocrFooter.innerHTML = '<span class="ocr-status-dot processing"></span> Sedang menjalankan OCR...';
+        setStatus("Foto diambil. Sedang membaca teks...", "detected");
         const formData = new FormData();
         formData.append("image", blob, "sampul.jpg");
         const response = await fetch("/ocr", { method: "POST", body: formData });
@@ -214,12 +300,19 @@
         const text = (result.text || "").replace(/\s+/g, " ").trim();
         textField.value = text;
         askButton.disabled = !text;
-        status.textContent = text
+        ocrBadge.textContent = text ? "SELESAI" : "TEKS TIDAK DITEMUKAN";
+        ocrBadge.className = `ocr-badge ${text ? "complete" : "error"}`;
+        ocrFooter.innerHTML = `<span class="ocr-status-dot ${text ? "complete" : "error"}"></span> ${text ? "OCR selesai" : "Tidak ada teks terbaca"}`;
+        setStatus(text
           ? "Teks berhasil dibaca. Periksa hasilnya, lalu edit jika diperlukan."
-          : "Teks belum terbaca. Coba foto ulang dengan sampul lebih jelas.";
+          : "Teks belum terbaca. Coba foto ulang dengan sampul lebih jelas.",
+          text ? "detected" : "error");
       } catch (error) {
         captureButton.disabled = false;
-        status.textContent = `Tidak dapat membaca sampul: ${error.message}`;
+        ocrBadge.textContent = "GAGAL";
+        ocrBadge.className = "ocr-badge error";
+        ocrFooter.innerHTML = '<span class="ocr-status-dot error"></span> OCR gagal';
+        setStatus(`Tidak dapat membaca sampul: ${error.message}`, "error");
       } finally {
         captureInProgress = false;
       }
@@ -241,15 +334,20 @@
       textField.value = "";
       askButton.disabled = true;
       aiResult.textContent = "";
+      ocrBadge.textContent = "BELUM AKTIF";
+      ocrBadge.className = "ocr-badge";
+      ocrFooter.innerHTML = '<span class="ocr-status-dot"></span> OCR belum dijalankan';
       consecutiveBookFrames = 0;
       previousFrame = null;
       stableSince = 0;
+      cancelCountdown();
       detectionInProgress = false;
       autoCapture = true;
-      status.textContent = "Membuka kamera...";
+      cameraIndicator.classList.remove("offline");
+      setStatus("Membuka kamera...", "waiting");
 
       if (!navigator.mediaDevices?.getUserMedia) {
-        status.textContent = "Kamera memerlukan HTTPS atau localhost dan dukungan browser.";
+        setStatus("Kamera memerlukan HTTPS atau localhost dan dukungan browser.", "error");
         return;
       }
 
@@ -268,14 +366,18 @@
         sampleCanvas.width = Math.max(1, Math.round(video.videoWidth * sampleScale));
         sampleCanvas.height = Math.max(1, Math.round(video.videoHeight * sampleScale));
         captureButton.disabled = false;
-        status.textContent = "Arahkan sampul ke kamera. Menunggu teks terdeteksi...";
+        cameraIndicator.classList.add("active");
+        cameraIndicator.classList.remove("offline");
+        setStatus("Arahkan sampul ke kamera. Menunggu teks terdeteksi...", "waiting");
         window.setTimeout(inspectFrame, 700);
       } catch (error) {
         stopCamera();
         autoCapture = false;
-        status.textContent = error.name === "NotAllowedError"
+        cameraIndicator.classList.remove("active");
+        cameraIndicator.classList.add("offline");
+        setStatus(error.name === "NotAllowedError"
           ? "Izin kamera ditolak. Izinkan akses kamera di browser untuk mulai scan."
-          : `Kamera tidak dapat dibuka: ${error.message}`;
+          : `Kamera tidak dapat dibuka: ${error.message}`, "error");
       }
     }
 

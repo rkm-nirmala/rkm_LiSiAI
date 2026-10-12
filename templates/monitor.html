@@ -1,61 +1,102 @@
 {% extends "base.html" %}
 
-{% block title %}Monitor sensor · LiSiAI{% endblock %}
+{% block title %}Monitor Tanaman · LiSiAI{% endblock %}
 
 {% block content %}
-  <section class="page-heading">
-    <h1>Monitor sensor</h1>
-    <p>Data sensor terbaru dari ESP32 ditampilkan di sini.</p>
-  </section>
-  <section class="panel">
-    <div class="section-heading">
-      <h2>Data sensor</h2>
-      <button id="refresh" class="button button-secondary" type="button">Muat ulang</button>
-    </div>
-    <div id="sensor-data" class="sensor-data" aria-live="polite">Memuat data sensor...</div>
-  </section>
-  <section class="panel">
-    <h2>Tanya AI lokal</h2>
-    <p>Pertanyaan dan data sensor terbaru akan diteruskan ke AI lokal melalui <code>/ask</code>.</p>
-    <form id="ask-form">
-      <label for="prompt">Pertanyaan</label>
-      <textarea id="prompt" name="prompt" rows="3" placeholder="Contoh: Bagaimana kondisi suhu saat ini?" required></textarea>
-      <button id="ask-sensor" class="button" type="submit" disabled>Kirim ke AI</button>
-    </form>
-    <pre id="ask-result" class="result" aria-live="polite"></pre>
-  </section>
+  <div class="theme-page monitor-page">
+    <a class="back-link" href="/dashboard">← Kembali ke Dashboard</a>
+
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Smart Plant Monitor · ESP32</p>
+        <h1>Monitor Tanaman</h1>
+        <p class="subtitle">Pantau kelembapan tanah dan kondisi udara dari sensor tanaman.</p>
+      </div>
+      <span id="connectionBadge" class="status-badge offline">● Menunggu data</span>
+    </header>
+
+    <section class="theme-sensor-grid" aria-label="Pembacaan sensor terbaru">
+      <article class="theme-sensor-card soil-moisture">
+        <span class="card-label">Kelembapan Tanah</span>
+        <div class="metric"><span id="soilMoisture">--</span><small>%</small></div>
+        <p id="soilMoistureTime">Belum ada data</p>
+      </article>
+      <article class="theme-sensor-card soil-temperature">
+        <span class="card-label">Suhu Tanah · DS18B20</span>
+        <div class="metric"><span id="soilTemperature">--</span><small>°C</small></div>
+        <p id="soilTemperatureTime">Belum ada data</p>
+      </article>
+      <article class="theme-sensor-card air-temperature">
+        <span class="card-label">Suhu Udara · DHT11</span>
+        <div class="metric"><span id="airTemperature">--</span><small>°C</small></div>
+        <p id="airTemperatureTime">Belum ada data</p>
+      </article>
+      <article class="theme-sensor-card air-humidity">
+        <span class="card-label">Kelembapan Udara · DHT11</span>
+        <div class="metric"><span id="airHumidity">--</span><small>%</small></div>
+        <p id="airHumidityTime">Belum ada data</p>
+      </article>
+    </section>
+
+    <section class="panel device-panel">
+      <div>
+        <p class="eyebrow">PERANGKAT</p>
+        <h2 id="device">Menunggu perangkat</h2>
+        <p id="deviceStatus" class="muted">Kirim data sensor untuk memulai pemantauan.</p>
+      </div>
+      <div class="panel-actions">
+        <span id="lastUpdate" class="muted">Belum diperbarui</span>
+        <button id="refresh" class="button button-secondary" type="button">Refresh data</button>
+      </div>
+    </section>
+
+    <section class="panel ai-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">BANTUAN AI LOKAL</p>
+          <h2>Analisis Kondisi Tanaman</h2>
+          <p class="muted">Tanyakan sesuatu tentang bacaan sensor terbaru.</p>
+        </div>
+      </div>
+      <form id="ask-form">
+        <label for="prompt">Pertanyaan</label>
+        <textarea id="prompt" name="prompt" rows="3" placeholder="Contoh: Apakah kelembapan tanah ini cukup untuk tanaman?" required></textarea>
+        <button id="ask-sensor" class="button" type="submit" disabled>✦ Analisis dengan AI</button>
+      </form>
+      <div id="ask-result" class="theme-ai-result" role="status" aria-live="polite">
+        Jawaban AI akan ditampilkan di sini.
+      </div>
+    </section>
+    <p class="page-note">Data menampilkan bacaan terbaru dan diperbarui otomatis setiap 5 detik.</p>
+  </div>
   <script>
-    const sensorData = document.querySelector("#sensor-data");
     let latestReading = null;
 
+    function setValue(id, value) {
+      document.querySelector(`#${id}`).textContent = value ?? "--";
+    }
+
     function formatReading(reading) {
-      const values = [
-        ["Perangkat", reading.data.device],
-        ["Status", reading.data.status],
-        ["Kelembapan tanah", `${reading.data.soil_moisture_pct}%`],
-        ["Suhu tanah", `${reading.data.soil_temperature} °C`],
-        ["Suhu udara", `${reading.data.air_temperature} °C`],
-        ["Kelembapan udara", `${reading.data.air_humidity}%`],
-        ["Suhu", `${reading.data.temperature} °C`],
-        ["Kelembapan", `${reading.data.humidity}%`],
-        ["Moisture mentah", reading.data.moisture_raw],
-        ["Diterima", new Date(reading.received_at).toLocaleString()],
-      ];
-      sensorData.replaceChildren();
-      for (const [label, value] of values) {
-        const item = document.createElement("div");
-        item.className = "sensor-value";
-        const name = document.createElement("span");
-        name.textContent = label;
-        const readingValue = document.createElement("strong");
-        readingValue.textContent = value;
-        item.append(name, readingValue);
-        sensorData.append(item);
-      }
+      const data = reading.data;
+      const receivedAt = new Date(reading.received_at).toLocaleString();
+      setValue("soilMoisture", data.soil_moisture_pct);
+      setValue("soilTemperature", data.soil_temperature);
+      setValue("airTemperature", data.air_temperature);
+      setValue("airHumidity", data.air_humidity);
+      setValue("soilMoistureTime", receivedAt);
+      setValue("soilTemperatureTime", receivedAt);
+      setValue("airTemperatureTime", receivedAt);
+      setValue("airHumidityTime", receivedAt);
+      setValue("device", data.device);
+      setValue("deviceStatus", `Status perangkat: ${data.status}`);
+      setValue("lastUpdate", `Terakhir diterima: ${receivedAt}`);
+      const badge = document.querySelector("#connectionBadge");
+      const isOnline = data.status.toLowerCase() === "online";
+      badge.className = `status-badge ${isOnline ? "online" : "offline"}`;
+      badge.textContent = isOnline ? "● Perangkat online" : `● ${data.status}`;
     }
 
     async function loadReading() {
-      sensorData.textContent = "Memuat data sensor...";
       try {
         const response = await fetch("/sensor");
         const body = await response.json();
@@ -65,12 +106,21 @@
         if (latestReading) {
           formatReading(latestReading);
         } else {
-          sensorData.textContent = "Belum ada data sensor.";
+          document.querySelector("#connectionBadge").className = "status-badge offline";
+          document.querySelector("#connectionBadge").textContent = "● Menunggu data";
+          for (const id of [
+            "soilMoisture", "soilTemperature", "airTemperature", "airHumidity",
+          ]) setValue(id, "--");
+          setValue("device", "Menunggu perangkat");
+          setValue("deviceStatus", "Kirim data sensor untuk memulai pemantauan.");
+          setValue("lastUpdate", "Belum diperbarui");
         }
       } catch (error) {
         latestReading = null;
         document.querySelector("#ask-sensor").disabled = true;
-        sensorData.textContent = error.message;
+        document.querySelector("#connectionBadge").className = "status-badge offline";
+        document.querySelector("#connectionBadge").textContent = "● Data tidak tersedia";
+        document.querySelector("#deviceStatus").textContent = error.message;
       }
     }
 
@@ -78,8 +128,10 @@
     document.querySelector("#ask-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!latestReading) return;
+      const button = document.querySelector("#ask-sensor");
       const result = document.querySelector("#ask-result");
-      result.textContent = "Mengirim pertanyaan...";
+      button.disabled = true;
+      result.textContent = "Menganalisis bacaan sensor...";
       try {
         const response = await fetch("/ask", {
           method: "POST",
@@ -91,9 +143,12 @@
           }),
         });
         const body = await response.json();
-        result.textContent = body.error || body.answer || JSON.stringify(body);
+        if (!response.ok) throw new Error(body.error || "AI gagal menganalisis data.");
+        result.textContent = body.answer;
       } catch (error) {
-        result.textContent = `Gagal menghubungi AI: ${error.message}`;
+        result.textContent = `Analisis tidak tersedia: ${error.message}`;
+      } finally {
+        button.disabled = !latestReading;
       }
     });
 
