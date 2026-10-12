@@ -35,6 +35,6 @@ Buka `http://127.0.0.1:5000`.
 
 OCR menggunakan Tesseract dengan preprocessing gambar ringan (orientasi EXIF, grayscale, peningkatan kontras, dan penajaman). Gambar dibatasi 16 MB dan 25 megapiksel. Respons sukses berisi teks, bahasa, dan rata-rata confidence kata yang terdeteksi. Jika executable atau data bahasa Tesseract belum tersedia, endpoint mengembalikan `503` dengan petunjuk pemasangan.
 
-Halaman `/scan` memerlukan izin kamera browser dan koneksi HTTPS (localhost diperbolehkan). Kamera menangkap saat tampilan stabil dan mencoba OCR otomatis; hasil ditampilkan satu baris agar mudah diperiksa dan diedit.
+Halaman `/scan` memerlukan izin kamera browser dan koneksi HTTPS (localhost diperbolehkan). Tampilan dua kolom memperlihatkan kamera/foto hasil capture dan hasil OCR yang bisa diedit. Saat frame stabil dengan detail visual, gambar diambil, kamera ditutup, lalu gambar dikirim ke OCR. Tombol tanya AI saat ini masih berupa stub UI; belum memanggil `/ask`.
 
 Data sensor saat ini disimpan sementara di memori proses (maksimal 1.000 data terbaru) dan akan hilang saat aplikasi dimulai ulang. Integrasi Ollama pada `/ask` belum tersedia.

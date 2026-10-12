@@ -5,43 +5,62 @@
 {% block content %}
   <section class="page-heading">
     <h1>Scan sampul buku</h1>
-    <p>Arahkan kamera ke sampul. Kami akan mengambil gambar saat posisi kamera stabil dan langsung membaca teksnya.</p>
+    <p>Arahkan sampul ke kamera. Tahan posisi agar gambar bisa diambil dan teksnya dibaca.</p>
   </section>
-  <section class="panel scanner">
-    <div class="camera-view">
-      <video id="camera" autoplay muted playsinline aria-label="Tampilan kamera untuk scan sampul"></video>
-      <div class="camera-guide" aria-hidden="true"></div>
-      <p id="camera-status" class="camera-status" role="status" aria-live="polite">Membuka kamera...</p>
+  <section class="scanner-grid">
+    <div class="panel scanner-panel">
+      <div class="camera-view">
+        <video id="camera" autoplay muted playsinline aria-label="Tampilan kamera untuk scan sampul"></video>
+        <img id="captured-preview" alt="Foto sampul yang diambil" hidden>
+        <div id="camera-guide" class="camera-guide" aria-hidden="true"></div>
+        <p id="camera-status" class="camera-status" role="status" aria-live="polite">Membuka kamera...</p>
+      </div>
+      <div class="camera-actions">
+        <button id="capture" class="button button-secondary" type="button" disabled>Ambil gambar sekarang</button>
+        <button id="retake" class="button button-secondary" type="button" hidden>Foto ulang</button>
+      </div>
     </div>
-    <button id="capture" class="button button-secondary" type="button" disabled>Ambil gambar sekarang</button>
-    <form id="result-form">
+    <div class="panel results-panel">
       <label for="extracted-text">Hasil teks — bisa diedit</label>
-      <textarea id="extracted-text" name="text" rows="5" placeholder="Hasil bacaan sampul akan muncul di sini." autocomplete="off"></textarea>
-    </form>
-    <canvas id="capture-canvas" hidden></canvas>
+      <textarea id="extracted-text" name="text" rows="7" placeholder="Hasil bacaan sampul akan muncul di sini." autocomplete="off"></textarea>
+      <button id="ask-ai" class="button" type="button" disabled>Tanya AI</button>
+      <p id="ai-result" class="ai-result" role="status" aria-live="polite"></p>
+    </div>
   </section>
+  <canvas id="capture-canvas" hidden></canvas>
   <script>
     const video = document.querySelector("#camera");
+    const preview = document.querySelector("#captured-preview");
+    const guide = document.querySelector("#camera-guide");
     const status = document.querySelector("#camera-status");
     const captureButton = document.querySelector("#capture");
+    const retakeButton = document.querySelector("#retake");
+    const askButton = document.querySelector("#ask-ai");
+    const aiResult = document.querySelector("#ai-result");
     const canvas = document.querySelector("#capture-canvas");
     const textField = document.querySelector("#extracted-text");
-    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const context = canvas.getContext("2d");
     const sampleCanvas = document.createElement("canvas");
     sampleCanvas.width = 160;
     sampleCanvas.height = 120;
     const sampleContext = sampleCanvas.getContext("2d", { willReadFrequently: true });
 
     let cameraStream;
+    let previewUrl;
     let previousFrame;
     let stableSince = 0;
-    let lastCaptureAt = 0;
-    let processing = false;
+    let captureInProgress = false;
     let autoCapture = true;
 
+    function stopCamera() {
+      cameraStream?.getTracks().forEach((track) => track.stop());
+      cameraStream = null;
+      video.srcObject = null;
+    }
+
     function inspectFrame() {
-      if (!autoCapture || processing || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-        window.setTimeout(inspectFrame, 200);
+      if (!autoCapture || captureInProgress || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        if (autoCapture) window.setTimeout(inspectFrame, 200);
         return;
       }
 
@@ -77,32 +96,23 @@
         difference = totalDifference / luminance.length;
       }
 
-      if (difference < 8) {
-        if (!stableSince) stableSince = now;
-      } else {
-        stableSince = 0;
-      }
+      stableSince = difference < 8 ? stableSince || now : 0;
       previousFrame = luminance;
 
-      const edgeRatio = edges / luminance.length;
-      if (
-        stableSince &&
-        now - stableSince >= 1400 &&
-        now - lastCaptureAt >= 7000 &&
-        edgeRatio > 0.015
-      ) {
-        lastCaptureAt = now;
-        readCapture();
+      if (stableSince && now - stableSince >= 1400 && edges / luminance.length > 0.015) {
+        captureImage();
+        return;
       }
 
       window.setTimeout(inspectFrame, 200);
     }
 
-    async function readCapture() {
-      if (processing || !video.videoWidth) return;
-      processing = true;
+    async function captureImage() {
+      if (captureInProgress || !video.videoWidth) return;
+      captureInProgress = true;
+      autoCapture = false;
       captureButton.disabled = true;
-      status.textContent = "Membaca teks pada sampul...";
+      status.textContent = "Menyiapkan foto sampul...";
 
       const scale = Math.min(1, 1600 / video.videoWidth);
       canvas.width = Math.round(video.videoWidth * scale);
@@ -113,6 +123,17 @@
         const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
         if (!blob) throw new Error("Gambar dari kamera tidak dapat dibuat.");
 
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewUrl = URL.createObjectURL(blob);
+        preview.src = previewUrl;
+        preview.hidden = false;
+        video.hidden = true;
+        guide.hidden = true;
+        captureButton.hidden = true;
+        retakeButton.hidden = false;
+        stopCamera();
+
+        status.textContent = "Foto diambil. Sedang membaca teks...";
         const formData = new FormData();
         formData.append("image", blob, "sampul.jpg");
         const response = await fetch("/ocr", { method: "POST", body: formData });
@@ -120,29 +141,38 @@
         if (!response.ok) throw new Error(result.error || "Pembacaan teks gagal.");
 
         const text = (result.text || "").replace(/\s+/g, " ").trim();
-        if (text) {
-          textField.value = text;
-          status.textContent = "Teks ditemukan. Periksa dan edit hasilnya di kolom bawah.";
-          autoCapture = false;
-        } else {
-          status.textContent = "Teks belum terbaca. Atur posisi atau fokus kamera; pemindaian akan dicoba lagi.";
-          stableSince = 0;
-        }
+        textField.value = text;
+        askButton.disabled = !text;
+        status.textContent = text
+          ? "Teks berhasil dibaca. Periksa hasilnya, lalu edit jika diperlukan."
+          : "Teks belum terbaca. Coba foto ulang dengan sampul lebih jelas.";
       } catch (error) {
-        status.textContent = `Tidak dapat membaca sampul: ${error.message}`;
-        autoCapture = false;
-      } finally {
-        processing = false;
         captureButton.disabled = false;
+        status.textContent = `Tidak dapat membaca sampul: ${error.message}`;
+      } finally {
+        captureInProgress = false;
       }
     }
 
-    captureButton.addEventListener("click", () => {
-      autoCapture = false;
-      readCapture();
-    });
-
     async function openCamera() {
+      stopCamera();
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = null;
+      preview.removeAttribute("src");
+      preview.hidden = true;
+      video.hidden = false;
+      guide.hidden = false;
+      captureButton.hidden = false;
+      retakeButton.hidden = true;
+      captureButton.disabled = true;
+      textField.value = "";
+      askButton.disabled = true;
+      aiResult.textContent = "";
+      previousFrame = null;
+      stableSince = 0;
+      autoCapture = true;
+      status.textContent = "Membuka kamera...";
+
       if (!navigator.mediaDevices?.getUserMedia) {
         status.textContent = "Kamera memerlukan HTTPS atau localhost dan dukungan browser.";
         return;
@@ -163,17 +193,28 @@
         status.textContent = "Arahkan sampul ke kamera dan tahan agar gambar stabil.";
         window.setTimeout(inspectFrame, 200);
       } catch (error) {
-        cameraStream?.getTracks().forEach((track) => track.stop());
-        video.srcObject = null;
-        const message = error.name === "NotAllowedError"
+        stopCamera();
+        autoCapture = false;
+        status.textContent = error.name === "NotAllowedError"
           ? "Izin kamera ditolak. Izinkan akses kamera di browser untuk mulai scan."
           : `Kamera tidak dapat dibuka: ${error.message}`;
-        status.textContent = message;
       }
     }
 
+    captureButton.addEventListener("click", captureImage);
+    retakeButton.addEventListener("click", openCamera);
+    textField.addEventListener("input", () => {
+      askButton.disabled = !textField.value.trim();
+      aiResult.textContent = "";
+    });
+    askButton.addEventListener("click", () => {
+      if (!textField.value.trim()) return;
+      aiResult.textContent = "AI sudah menjawab, di /ask";
+    });
+
     window.addEventListener("pagehide", () => {
-      cameraStream?.getTracks().forEach((track) => track.stop());
+      stopCamera();
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
     });
 
     openCamera();
