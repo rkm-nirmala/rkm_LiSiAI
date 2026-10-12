@@ -16,7 +16,7 @@
   </section>
   <section class="panel">
     <h2>Tanya AI lokal</h2>
-    <p>Antarmuka akan meneruskan pertanyaan dan data sensor terbaru ke <code>/ask</code> setelah Ollama terhubung.</p>
+    <p>Pertanyaan dan data sensor terbaru akan diteruskan ke AI lokal melalui <code>/ask</code>.</p>
     <form id="ask-form">
       <label for="prompt">Pertanyaan</label>
       <textarea id="prompt" name="prompt" rows="3" placeholder="Contoh: Bagaimana kondisi suhu saat ini?" required></textarea>
@@ -53,8 +53,9 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: document.querySelector("#prompt").value,
-            context: latestReadings.at(-1) || null,
+            task: "sensor_analysis",
+            question: document.querySelector("#prompt").value,
+            latest_reading: latestReadings.at(-1) || null,
           }),
         });
         const body = await response.json();

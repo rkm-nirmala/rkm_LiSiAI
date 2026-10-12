@@ -285,9 +285,26 @@
       askButton.disabled = !textField.value.trim();
       aiResult.textContent = "";
     });
-    askButton.addEventListener("click", () => {
-      if (!textField.value.trim()) return;
-      aiResult.textContent = "AI sudah menjawab, di /ask";
+    askButton.addEventListener("click", async () => {
+      const extractedText = textField.value.trim();
+      if (!extractedText) return;
+
+      askButton.disabled = true;
+      aiResult.textContent = "Meminta analisis dari AI lokal...";
+      try {
+        const response = await fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task: "book_scan", extracted_text: extractedText }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "AI lokal gagal menjawab.");
+        aiResult.textContent = result.answer;
+      } catch (error) {
+        aiResult.textContent = `Tidak dapat memperoleh jawaban: ${error.message}`;
+      } finally {
+        askButton.disabled = !textField.value.trim();
+      }
     });
 
     window.addEventListener("pagehide", () => {

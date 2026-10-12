@@ -257,6 +257,7 @@ nav a:hover {
   margin: 0;
   color: #176b87 !important;
   font-weight: 650;
+  white-space: pre-wrap;
 }
 
 .section-heading {

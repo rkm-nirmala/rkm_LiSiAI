@@ -4,6 +4,9 @@ from itertools import count
 
 from flask import Flask, jsonify, render_template, request
 
+from data.book_scan import BookScanDataError, build_book_scan_data
+from data.sensor_analysis import SensorAnalysisDataError, build_sensor_analysis_data
+from lib.ask_service import AskServiceError, ask_ollama
 from lib.cover_detector import detect_text_regions
 from lib.ocr_service import OCRServiceError, SUPPORTED_LANGUAGES, extract_text
 
@@ -68,14 +71,24 @@ def ask():
     if not isinstance(payload, dict):
         return jsonify(error="Body harus berupa JSON object."), 400
 
-    prompt = payload.get("prompt")
-    if not isinstance(prompt, str) or not prompt.strip():
-        return jsonify(error="Field 'prompt' wajib berupa teks dan tidak boleh kosong."), 400
+    task = payload.get("task")
+    try:
+        if task == "book_scan":
+            data = build_book_scan_data(payload.get("extracted_text"))
+        elif task == "sensor_analysis":
+            data = build_sensor_analysis_data(
+                payload.get("question"),
+                payload.get("latest_reading"),
+            )
+        else:
+            return jsonify(error="Field 'task' harus 'book_scan' atau 'sensor_analysis'."), 400
+    except (BookScanDataError, SensorAnalysisDataError) as error:
+        return jsonify(error=str(error)), 400
 
-    return jsonify(
-        error="Integrasi dengan Ollama belum diimplementasikan.",
-        prompt=prompt.strip(),
-    ), 501
+    try:
+        return jsonify(ask_ollama(task, data))
+    except AskServiceError as error:
+        return jsonify(error=str(error)), error.status_code
 
 
 @app.route("/sensor", methods=["GET", "POST"])
