@@ -7,7 +7,9 @@
     <a href="/dashboard" class="back-link">← Kembali ke Dashboard</a>
     <header class="page-header">
       <div>
+        <p class="eyebrow">Image capture · LibraScan</p>
         <h1>Scan Cover</h1>
+        <p class="subtitle">Arahkan sampul buku ke kamera. Saat teks terdeteksi dan gambar stabil, foto akan diambil otomatis.</p>
       </div>
     </header>
 
@@ -16,7 +18,9 @@
         <div class="panel-heading">
           <div>
             <h2>Preview Kamera</h2>
+            <p id="camera-heading-status">Membuka kamera...</p>
           </div>
+          <span id="camera-indicator" class="camera-indicator" aria-label="Status kamera"></span>
         </div>
         <div class="camera-frame">
           <video id="camera" autoplay muted playsinline aria-label="Tampilan kamera untuk scan sampul"></video>
