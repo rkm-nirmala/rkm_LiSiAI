@@ -9,11 +9,13 @@
   <body>
     <header class="site-header">
       <a class="brand" href="/">LiSiAI</a>
+      {% if request.endpoint != "dashboard" %}
       <nav aria-label="Navigasi utama">
         <a href="/dashboard">Dashboard</a>
         <a href="/scan">Scan sampul</a>
         <a href="/monitor">Monitor sensor</a>
       </nav>
+      {% endif %}
     </header>
     <main class="container">
       {% block content %}{% endblock %}

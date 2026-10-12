@@ -482,23 +482,6 @@ form .button {
   pointer-events: none;
 }
 
-.capture-countdown {
-  position: absolute;
-  z-index: 3;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgb(15 34 29 / 22%);
-  color: white;
-  font-size: clamp(5rem, 18vw, 9rem);
-  font-weight: 800;
-  text-shadow: 0 3px 20px rgb(0 0 0 / 35%);
-}
-
-.capture-countdown[hidden] {
-  display: none;
-}
-
 .capture-flash {
   position: absolute;
   z-index: 4;

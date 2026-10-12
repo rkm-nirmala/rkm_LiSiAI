@@ -27,7 +27,6 @@
           <div id="camera-guide" class="camera-guide" aria-hidden="true"></div>
           <canvas id="detection-overlay" aria-hidden="true"></canvas>
           <img id="captured-preview" alt="Foto sampul yang diambil" hidden>
-          <div id="capture-countdown" class="capture-countdown" aria-live="assertive" hidden></div>
           <div id="capture-flash" class="capture-flash" aria-hidden="true"></div>
         </div>
         <canvas id="capture-canvas" hidden></canvas>
@@ -72,7 +71,6 @@
     const headingStatus = document.querySelector("#camera-heading-status");
     const cameraIndicator = document.querySelector("#camera-indicator");
     const detectionDot = document.querySelector("#detection-dot");
-    const countdown = document.querySelector("#capture-countdown");
     const flash = document.querySelector("#capture-flash");
     const ocrBadge = document.querySelector("#ocr-badge");
     const ocrFooter = document.querySelector("#ocr-footer");
@@ -96,8 +94,6 @@
     let consecutiveBookFrames = 0;
     let previousFrame;
     let stableSince = 0;
-    let countdownTimer;
-    let countdownValue = 0;
     let autoCapture = true;
 
     function setStatus(message, state = "waiting") {
@@ -165,29 +161,6 @@
       return totalDifference / currentFrame.length;
     }
 
-    function cancelCountdown() {
-      window.clearInterval(countdownTimer);
-      countdownTimer = null;
-      countdownValue = 0;
-      countdown.hidden = true;
-    }
-
-    function startCaptureCountdown() {
-      if (countdownTimer) return;
-      countdownValue = 3;
-      countdown.textContent = countdownValue;
-      countdown.hidden = false;
-      countdownTimer = window.setInterval(() => {
-        countdownValue -= 1;
-        if (countdownValue <= 0) {
-          cancelCountdown();
-          captureImage();
-          return;
-        }
-        countdown.textContent = countdownValue;
-      }, 1000);
-    }
-
     async function inspectFrame() {
       if (!autoCapture || captureInProgress || detectionInProgress) return;
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -224,12 +197,9 @@
         }
 
         if (consecutiveBookFrames >= 3 && now - stableSince >= 1400) {
-          startCaptureCountdown();
-        } else {
-          cancelCountdown();
-        }
-        if (countdownTimer) {
-          setStatus(`Teks terdeteksi dan stabil. Foto diambil dalam ${countdownValue} detik...`, "detected");
+          setStatus("Teks terdeteksi dan stabil. Mengambil foto...", "detected");
+          await captureImage();
+          return;
         } else {
           setStatus(textDetected
             ? difference >= 8
@@ -259,7 +229,6 @@
       captureInProgress = true;
       autoCapture = false;
       captureButton.disabled = true;
-      cancelCountdown();
       setStatus("Menyiapkan foto sampul...", "detected");
 
       const scale = Math.min(1, 1600 / video.videoWidth);
@@ -340,7 +309,6 @@
       consecutiveBookFrames = 0;
       previousFrame = null;
       stableSince = 0;
-      cancelCountdown();
       detectionInProgress = false;
       autoCapture = true;
       cameraIndicator.classList.remove("offline");
