@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Scan sampul · LiSiAI{% endblock %}
+
+{% block content %}
+  <section class="page-heading">
+    <p class="eyebrow">Ekstraksi teks</p>
+    <h1>Scan sampul buku</h1>
+    <p>Pilih gambar sampul. Gambar akan dikirim ke <code>/ocr</code>; pemrosesan Tesseract belum tersedia.</p>
+  </section>
+  <section class="panel">
+    <form id="scan-form">
+      <label for="image">Gambar sampul</label>
+      <input id="image" name="image" type="file" accept="image/*" required>
+      <button class="button" type="submit">Kirim gambar</button>
+    </form>
+    <pre id="scan-result" class="result" aria-live="polite"></pre>
+  </section>
+  <script>
+    const form = document.querySelector("#scan-form");
+    const result = document.querySelector("#scan-result");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      result.textContent = "Mengirim gambar...";
+      try {
+        const response = await fetch("/ocr", {
+          method: "POST",
+          body: new FormData(form),
+        });
+        const body = await response.json();
+        result.textContent = body.error || body.message || JSON.stringify(body);
+      } catch (error) {
+        result.textContent = `Gagal mengirim gambar: ${error.message}`;
+      }
+    });
+  </script>
+{% endblock %}

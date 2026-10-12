@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Monitor sensor · LiSiAI{% endblock %}
+
+{% block content %}
+  <section class="page-heading">
+    <p class="eyebrow">ESP32 & AI lokal</p>
+    <h1>Monitor sensor</h1>
+    <p>Data yang dikirim ke <code>/sensor</code> ditampilkan di sini. Penyimpanan saat ini hanya di memori aplikasi.</p>
+  </section>
+  <section class="panel">
+    <div class="section-heading">
+      <h2>Data sensor</h2>
+      <button id="refresh" class="button button-secondary" type="button">Muat ulang</button>
+    </div>
+    <pre id="sensor-data" class="result" aria-live="polite">Memuat data sensor...</pre>
+  </section>
+  <section class="panel">
+    <h2>Tanya AI lokal</h2>
+    <p>Antarmuka akan meneruskan pertanyaan dan data sensor terbaru ke <code>/ask</code> setelah Ollama terhubung.</p>
+    <form id="ask-form">
+      <label for="prompt">Pertanyaan</label>
+      <textarea id="prompt" name="prompt" rows="3" placeholder="Contoh: Bagaimana kondisi suhu saat ini?" required></textarea>
+      <button class="button" type="submit">Kirim ke AI</button>
+    </form>
+    <pre id="ask-result" class="result" aria-live="polite"></pre>
+  </section>
+  <script>
+    const sensorData = document.querySelector("#sensor-data");
+    let latestReadings = [];
+
+    async function loadReadings() {
+      sensorData.textContent = "Memuat data sensor...";
+      try {
+        const response = await fetch("/sensor");
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Gagal memuat data sensor.");
+        latestReadings = body.readings;
+        sensorData.textContent = latestReadings.length
+          ? JSON.stringify(latestReadings, null, 2)
+          : "Belum ada data sensor.";
+      } catch (error) {
+        sensorData.textContent = error.message;
+      }
+    }
+
+    document.querySelector("#refresh").addEventListener("click", loadReadings);
+    document.querySelector("#ask-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const result = document.querySelector("#ask-result");
+      result.textContent = "Mengirim pertanyaan...";
+      try {
+        const response = await fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: document.querySelector("#prompt").value,
+            context: latestReadings.at(-1) || null,
+          }),
+        });
+        const body = await response.json();
+        result.textContent = body.error || body.answer || JSON.stringify(body);
+      } catch (error) {
+        result.textContent = `Gagal menghubungi AI: ${error.message}`;
+      }
+    });
+
+    loadReadings();
+    setInterval(loadReadings, 5000);
+  </script>
+{% endblock %}

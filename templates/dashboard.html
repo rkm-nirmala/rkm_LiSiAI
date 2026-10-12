@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard · LiSiAI{% endblock %}
+
+{% block content %}
+  <section class="page-heading">
+    <p class="eyebrow">LiSiAI</p>
+    <h1>Dashboard</h1>
+    <p>Halaman dashboard utama. Pilih fitur yang ingin digunakan.</p>
+  </section>
+  <section class="card-grid">
+    <a class="card" href="/scan">
+      <h2>Scan sampul buku</h2>
+      <p>Kirim gambar ke antarmuka OCR.</p>
+    </a>
+    <a class="card" href="/monitor">
+      <h2>Monitor ESP32</h2>
+      <p>Lihat data sensor dan siapkan analisis AI.</p>
+    </a>
+  </section>
+{% endblock %}
