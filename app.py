@@ -119,10 +119,5 @@ def scan():
     return render_template("scan.html")
 
 
-@app.errorhandler(413)
-def request_entity_too_large(_error):
-    return jsonify(error="Ukuran gambar melebihi batas 16 MB."), 413
-
-
 if __name__ == "__main__":
     app.run(debug=True)
