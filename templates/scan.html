@@ -39,12 +39,9 @@
         <div class="panel-heading">
           <div>
             <h2>Hasil OCR</h2>
-            <p>Teks yang dibaca dari sampul buku</p>
           </div>
-          <span id="ocr-badge" class="ocr-badge">BELUM AKTIF</span>
         </div>
         <div class="ocr-content">
-          <label for="extracted-text" class="ocr-label">Teks hasil pembacaan</label>
           <textarea id="extracted-text" name="text" rows="8" placeholder="Hasil OCR akan muncul setelah gambar diproses..." autocomplete="off"></textarea>
           <p class="edit-hint">Periksa atau edit teks sebelum meminta analisis AI.</p>
           <button id="ask-ai" class="button" type="button" disabled>✦ Tanya AI</button>
@@ -64,7 +61,6 @@
     const guide = document.querySelector("#camera-guide");
     const cameraIndicator = document.querySelector("#camera-indicator");
     const flash = document.querySelector("#capture-flash");
-    const ocrBadge = document.querySelector("#ocr-badge");
     const ocrFooter = document.querySelector("#ocr-footer");
     const captureButton = document.querySelector("#capture");
     const retakeButton = document.querySelector("#retake");
@@ -230,8 +226,6 @@
         cameraIndicator.setAttribute("aria-label", "Status kamera: foto diambil");
         stopCamera();
 
-        ocrBadge.textContent = "MEMPROSES";
-        ocrBadge.className = "ocr-badge processing";
         ocrFooter.innerHTML = '<span class="ocr-status-dot processing"></span> Sedang menjalankan OCR...';
         const formData = new FormData();
         formData.append("image", blob, "sampul.jpg");
@@ -242,13 +236,9 @@
         const text = (result.text || "").replace(/\s+/g, " ").trim();
         textField.value = text;
         askButton.disabled = !text;
-        ocrBadge.textContent = text ? "SELESAI" : "TEKS TIDAK DITEMUKAN";
-        ocrBadge.className = `ocr-badge ${text ? "complete" : "error"}`;
         ocrFooter.innerHTML = `<span class="ocr-status-dot ${text ? "complete" : "error"}"></span> ${text ? "OCR selesai" : "Tidak ada teks terbaca"}`;
       } catch (error) {
         captureButton.disabled = false;
-        ocrBadge.textContent = "GAGAL";
-        ocrBadge.className = "ocr-badge error";
         ocrFooter.textContent = `OCR gagal: ${error.message}`;
       } finally {
         captureInProgress = false;
@@ -271,8 +261,6 @@
       textField.value = "";
       askButton.disabled = true;
       aiResult.textContent = "";
-      ocrBadge.textContent = "BELUM AKTIF";
-      ocrBadge.className = "ocr-badge";
       ocrFooter.innerHTML = '<span class="ocr-status-dot"></span> OCR belum dijalankan';
       consecutiveBookFrames = 0;
       previousFrame = null;
