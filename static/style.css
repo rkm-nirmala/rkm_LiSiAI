@@ -214,14 +214,6 @@ nav a:hover {
   pointer-events: none;
 }
 
-.camera-status {
-  margin: 0;
-  padding: 0.25rem 0.15rem;
-  border-radius: 0.45rem;
-  color: #53657e !important;
-  line-height: 1.5;
-}
-
 .camera-actions {
   display: flex;
   flex-wrap: wrap;
@@ -415,7 +407,6 @@ form .button {
 }
 
 .camera-indicator,
-.detection-dot,
 .ocr-status-dot {
   display: inline-block;
   flex: 0 0 auto;
@@ -426,19 +417,16 @@ form .button {
 }
 
 .camera-indicator.active,
-.detection-dot.detected,
 .ocr-status-dot.complete {
   background: #3dbb7b;
   box-shadow: 0 0 0 4px rgb(61 187 123 / 13%);
 }
 
 .camera-indicator.offline,
-.detection-dot.error,
 .ocr-status-dot.error {
   background: #dc6670;
 }
 
-.detection-dot.waiting,
 .ocr-status-dot.processing {
   background: #e6a83b;
 }
@@ -498,20 +486,6 @@ form .button {
 @keyframes camera-flash {
   0% { opacity: 0.9; }
   100% { opacity: 0; }
-}
-
-.detection-status {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  min-height: 2rem;
-  color: var(--theme-muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-.detection-dot {
-  margin-top: 0.3rem;
 }
 
 .camera-actions,
