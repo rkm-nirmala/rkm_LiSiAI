@@ -1,4 +1,4 @@
-from collections import deque
+import math
 from datetime import datetime, timezone
 from itertools import count
 
@@ -14,8 +14,8 @@ from lib.ocr_service import OCRServiceError, SUPPORTED_LANGUAGES, extract_text
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
-sensor_readings = deque(maxlen=1000)
 reading_ids = count(1)
+latest_sensor_reading = None
 
 
 @app.get("/")
@@ -93,19 +93,41 @@ def ask():
 
 @app.route("/sensor", methods=["GET", "POST"])
 def sensor():
+    global latest_sensor_reading
+
     if request.method == "GET":
-        return jsonify(readings=list(sensor_readings))
+        return jsonify(reading=latest_sensor_reading)
 
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict) or not payload:
         return jsonify(error="Body harus berupa JSON object berisi data sensor."), 400
+    if not isinstance(payload.get("device"), str) or not payload["device"].strip():
+        return jsonify(error="Field 'device' wajib berupa teks dan tidak boleh kosong."), 400
+    if not isinstance(payload.get("status"), str) or not payload["status"].strip():
+        return jsonify(error="Field 'status' wajib berupa teks dan tidak boleh kosong."), 400
+
+    numeric_fields = (
+        "moisture_raw",
+        "soil_moisture_pct",
+        "soil_temperature",
+        "air_temperature",
+        "air_humidity",
+        "temperature",
+        "humidity",
+    )
+    for field in numeric_fields:
+        value = payload.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return jsonify(error=f"Field '{field}' wajib berupa angka."), 400
+        if isinstance(value, float) and not math.isfinite(value):
+            return jsonify(error=f"Field '{field}' harus berupa angka finite."), 400
 
     reading = {
         "id": next(reading_ids),
         "received_at": datetime.now(timezone.utc).isoformat(),
         "data": payload,
     }
-    sensor_readings.append(reading)
+    latest_sensor_reading = reading
     return jsonify(reading), 201
 
 

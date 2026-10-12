@@ -260,6 +260,30 @@ nav a:hover {
   white-space: pre-wrap;
 }
 
+.sensor-data {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.sensor-value {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem;
+  border: 1px solid #e3eaf3;
+  border-radius: 0.55rem;
+  background: #f8fafc;
+}
+
+.sensor-value span {
+  color: #63738a;
+  font-size: 0.85rem;
+}
+
+.sensor-value strong {
+  overflow-wrap: anywhere;
+}
+
 .section-heading {
   display: flex;
   align-items: center;

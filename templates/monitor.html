@@ -5,14 +5,14 @@
 {% block content %}
   <section class="page-heading">
     <h1>Monitor sensor</h1>
-    <p>Data yang dikirim ke <code>/sensor</code> ditampilkan di sini. Penyimpanan saat ini hanya di memori aplikasi.</p>
+    <p>Data sensor terbaru dari ESP32 ditampilkan di sini.</p>
   </section>
   <section class="panel">
     <div class="section-heading">
       <h2>Data sensor</h2>
       <button id="refresh" class="button button-secondary" type="button">Muat ulang</button>
     </div>
-    <pre id="sensor-data" class="result" aria-live="polite">Memuat data sensor...</pre>
+    <div id="sensor-data" class="sensor-data" aria-live="polite">Memuat data sensor...</div>
   </section>
   <section class="panel">
     <h2>Tanya AI lokal</h2>
@@ -20,32 +20,64 @@
     <form id="ask-form">
       <label for="prompt">Pertanyaan</label>
       <textarea id="prompt" name="prompt" rows="3" placeholder="Contoh: Bagaimana kondisi suhu saat ini?" required></textarea>
-      <button class="button" type="submit">Kirim ke AI</button>
+      <button id="ask-sensor" class="button" type="submit" disabled>Kirim ke AI</button>
     </form>
     <pre id="ask-result" class="result" aria-live="polite"></pre>
   </section>
   <script>
     const sensorData = document.querySelector("#sensor-data");
-    let latestReadings = [];
+    let latestReading = null;
 
-    async function loadReadings() {
+    function formatReading(reading) {
+      const values = [
+        ["Perangkat", reading.data.device],
+        ["Status", reading.data.status],
+        ["Kelembapan tanah", `${reading.data.soil_moisture_pct}%`],
+        ["Suhu tanah", `${reading.data.soil_temperature} °C`],
+        ["Suhu udara", `${reading.data.air_temperature} °C`],
+        ["Kelembapan udara", `${reading.data.air_humidity}%`],
+        ["Suhu", `${reading.data.temperature} °C`],
+        ["Kelembapan", `${reading.data.humidity}%`],
+        ["Moisture mentah", reading.data.moisture_raw],
+        ["Diterima", new Date(reading.received_at).toLocaleString()],
+      ];
+      sensorData.replaceChildren();
+      for (const [label, value] of values) {
+        const item = document.createElement("div");
+        item.className = "sensor-value";
+        const name = document.createElement("span");
+        name.textContent = label;
+        const readingValue = document.createElement("strong");
+        readingValue.textContent = value;
+        item.append(name, readingValue);
+        sensorData.append(item);
+      }
+    }
+
+    async function loadReading() {
       sensorData.textContent = "Memuat data sensor...";
       try {
         const response = await fetch("/sensor");
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "Gagal memuat data sensor.");
-        latestReadings = body.readings;
-        sensorData.textContent = latestReadings.length
-          ? JSON.stringify(latestReadings, null, 2)
-          : "Belum ada data sensor.";
+        latestReading = body.reading;
+        document.querySelector("#ask-sensor").disabled = !latestReading;
+        if (latestReading) {
+          formatReading(latestReading);
+        } else {
+          sensorData.textContent = "Belum ada data sensor.";
+        }
       } catch (error) {
+        latestReading = null;
+        document.querySelector("#ask-sensor").disabled = true;
         sensorData.textContent = error.message;
       }
     }
 
-    document.querySelector("#refresh").addEventListener("click", loadReadings);
+    document.querySelector("#refresh").addEventListener("click", loadReading);
     document.querySelector("#ask-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (!latestReading) return;
       const result = document.querySelector("#ask-result");
       result.textContent = "Mengirim pertanyaan...";
       try {
@@ -55,7 +87,7 @@
           body: JSON.stringify({
             task: "sensor_analysis",
             question: document.querySelector("#prompt").value,
-            latest_reading: latestReadings.at(-1) || null,
+            latest_reading: latestReading,
           }),
         });
         const body = await response.json();
@@ -65,7 +97,7 @@
       }
     });
 
-    loadReadings();
-    setInterval(loadReadings, 5000);
+    loadReading();
+    setInterval(loadReading, 5000);
   </script>
 {% endblock %}

@@ -40,7 +40,7 @@ Buka `http://127.0.0.1:5000`.
 | `/ocr` | `POST` gambar sebagai multipart field `image`; field opsional `language` (`ind+eng`, `ind`, `eng`) |
 | `/detect-text` | `POST` frame kamera berukuran kecil sebagai multipart field `image`; OpenCV mengembalikan garis sampul dan kotak teks yang terdeteksi |
 | `/ask` | `POST` JSON dengan `task` `book_scan` + `extracted_text` atau `sensor_analysis` + `question` + `latest_reading`; diteruskan ke Ollama lokal |
-| `/sensor` | `POST` JSON object untuk menyimpan data; `GET` untuk mengambil data |
+| `/sensor` | `POST` JSON data sensor ESP32; mengganti satu-satunya data terbaru. `GET` mengembalikan `{"reading": ...}` |
 | `/monitor` | Tampilan data sensor dan antarmuka pertanyaan AI |
 
 OCR menggunakan Tesseract dengan preprocessing gambar ringan (orientasi EXIF, grayscale, peningkatan kontras, dan penajaman). Gambar dibatasi 16 MB dan 25 megapiksel. Respons sukses berisi teks, bahasa, dan rata-rata confidence kata yang terdeteksi. Jika executable atau data bahasa Tesseract belum tersedia, endpoint mengembalikan `503` dengan petunjuk pemasangan.
@@ -49,4 +49,4 @@ Halaman `/scan` memerlukan izin kamera browser dan koneksi HTTPS (localhost dipe
 
 Endpoint `/ask` menggunakan prompt terpisah di `prompts/` dan pembentuk data terstruktur di `data/`, lalu meneruskan permintaan ke Ollama pada `http://127.0.0.1:11434` secara default. Model default adalah `qwen2.5:3b`; sesuaikan dengan model yang tersedia memakai `OLLAMA_MODEL`. `OLLAMA_BASE_URL` dan `OLLAMA_TIMEOUT_SECONDS` juga dapat dikonfigurasi melalui environment. Teks OCR yang dikoreksi dikirim oleh tombol Tanya AI di halaman scan. Ollama perlu berjalan dan model sudah diunduh di server; setelah itu analisis berlangsung lokal tanpa layanan cloud. Respons koneksi Ollama yang gagal menghasilkan error HTTP eksplisit.
 
-Data sensor saat ini disimpan sementara di memori proses (maksimal 1.000 data terbaru) dan akan hilang saat aplikasi dimulai ulang.
+Data sensor terbaru disimpan di memori proses (satu bacaan saja) dan akan hilang saat aplikasi dimulai ulang. Halaman `/monitor` menampilkan bacaan tersebut dan mengirim bacaan yang sama bersama pertanyaan ke `/ask` untuk analisis lokal.
