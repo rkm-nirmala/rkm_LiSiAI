@@ -4,44 +4,178 @@
 
 {% block content %}
   <section class="page-heading">
-    <p class="eyebrow">Ekstraksi teks</p>
     <h1>Scan sampul buku</h1>
-    <p>Pilih gambar sampul untuk mengekstrak teks menggunakan Tesseract OCR.</p>
+    <p>Arahkan kamera ke sampul. Kami akan mengambil gambar saat posisi kamera stabil dan langsung membaca teksnya.</p>
   </section>
-  <section class="panel">
-    <form id="scan-form">
-      <label for="image">Gambar sampul</label>
-      <input id="image" name="image" type="file" accept="image/*" required>
-      <label for="language">Bahasa teks</label>
-      <select id="language" name="language">
-        <option value="ind+eng">Indonesia + Inggris</option>
-        <option value="ind">Indonesia</option>
-        <option value="eng">Inggris</option>
-      </select>
-      <button class="button" type="submit">Kirim gambar</button>
+  <section class="panel scanner">
+    <div class="camera-view">
+      <video id="camera" autoplay muted playsinline aria-label="Tampilan kamera untuk scan sampul"></video>
+      <div class="camera-guide" aria-hidden="true"></div>
+      <p id="camera-status" class="camera-status" role="status" aria-live="polite">Membuka kamera...</p>
+    </div>
+    <button id="capture" class="button button-secondary" type="button" disabled>Ambil gambar sekarang</button>
+    <form id="result-form">
+      <label for="extracted-text">Hasil teks — bisa diedit</label>
+      <textarea id="extracted-text" name="text" rows="5" placeholder="Hasil bacaan sampul akan muncul di sini." autocomplete="off"></textarea>
     </form>
-    <pre id="scan-result" class="result" aria-live="polite"></pre>
+    <canvas id="capture-canvas" hidden></canvas>
   </section>
   <script>
-    const form = document.querySelector("#scan-form");
-    const result = document.querySelector("#scan-result");
+    const video = document.querySelector("#camera");
+    const status = document.querySelector("#camera-status");
+    const captureButton = document.querySelector("#capture");
+    const canvas = document.querySelector("#capture-canvas");
+    const textField = document.querySelector("#extracted-text");
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const sampleCanvas = document.createElement("canvas");
+    sampleCanvas.width = 160;
+    sampleCanvas.height = 120;
+    const sampleContext = sampleCanvas.getContext("2d", { willReadFrequently: true });
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      result.textContent = "Mengirim gambar...";
-      try {
-        const response = await fetch("/ocr", {
-          method: "POST",
-          body: new FormData(form),
-        });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error || "OCR gagal.");
-        result.textContent = body.text
-          ? `Teks: ${body.text}\nBahasa: ${body.language}\nKeyakinan rata-rata: ${body.confidence ?? "tidak tersedia"}%`
-          : "Tidak ada teks yang terdeteksi pada gambar.";
-      } catch (error) {
-        result.textContent = `Gagal mengirim gambar: ${error.message}`;
+    let cameraStream;
+    let previousFrame;
+    let stableSince = 0;
+    let lastCaptureAt = 0;
+    let processing = false;
+    let autoCapture = true;
+
+    function inspectFrame() {
+      if (!autoCapture || processing || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        window.setTimeout(inspectFrame, 200);
+        return;
       }
+
+      sampleContext.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+      const pixels = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+      const luminance = new Uint8Array(sampleCanvas.width * sampleCanvas.height);
+      let edges = 0;
+      for (let y = 0; y < sampleCanvas.height; y += 1) {
+        for (let x = 0; x < sampleCanvas.width; x += 1) {
+          const pixel = (y * sampleCanvas.width + x) * 4;
+          const light = Math.round(
+            pixels[pixel] * 0.299 + pixels[pixel + 1] * 0.587 + pixels[pixel + 2] * 0.114,
+          );
+          luminance[y * sampleCanvas.width + x] = light;
+          if (
+            x > 0 &&
+            (Math.abs(light - luminance[y * sampleCanvas.width + x - 1]) > 35 ||
+              (y > 0 &&
+                Math.abs(light - luminance[(y - 1) * sampleCanvas.width + x]) > 35))
+          ) {
+            edges += 1;
+          }
+        }
+      }
+
+      const now = performance.now();
+      let difference = Infinity;
+      if (previousFrame) {
+        let totalDifference = 0;
+        for (let index = 0; index < luminance.length; index += 1) {
+          totalDifference += Math.abs(luminance[index] - previousFrame[index]);
+        }
+        difference = totalDifference / luminance.length;
+      }
+
+      if (difference < 8) {
+        if (!stableSince) stableSince = now;
+      } else {
+        stableSince = 0;
+      }
+      previousFrame = luminance;
+
+      const edgeRatio = edges / luminance.length;
+      if (
+        stableSince &&
+        now - stableSince >= 1400 &&
+        now - lastCaptureAt >= 7000 &&
+        edgeRatio > 0.015
+      ) {
+        lastCaptureAt = now;
+        readCapture();
+      }
+
+      window.setTimeout(inspectFrame, 200);
+    }
+
+    async function readCapture() {
+      if (processing || !video.videoWidth) return;
+      processing = true;
+      captureButton.disabled = true;
+      status.textContent = "Membaca teks pada sampul...";
+
+      const scale = Math.min(1, 1600 / video.videoWidth);
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      try {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+        if (!blob) throw new Error("Gambar dari kamera tidak dapat dibuat.");
+
+        const formData = new FormData();
+        formData.append("image", blob, "sampul.jpg");
+        const response = await fetch("/ocr", { method: "POST", body: formData });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Pembacaan teks gagal.");
+
+        const text = (result.text || "").replace(/\s+/g, " ").trim();
+        if (text) {
+          textField.value = text;
+          status.textContent = "Teks ditemukan. Periksa dan edit hasilnya di kolom bawah.";
+          autoCapture = false;
+        } else {
+          status.textContent = "Teks belum terbaca. Atur posisi atau fokus kamera; pemindaian akan dicoba lagi.";
+          stableSince = 0;
+        }
+      } catch (error) {
+        status.textContent = `Tidak dapat membaca sampul: ${error.message}`;
+        autoCapture = false;
+      } finally {
+        processing = false;
+        captureButton.disabled = false;
+      }
+    }
+
+    captureButton.addEventListener("click", () => {
+      autoCapture = false;
+      readCapture();
     });
+
+    async function openCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        status.textContent = "Kamera memerlukan HTTPS atau localhost dan dukungan browser.";
+        return;
+      }
+
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+        video.srcObject = cameraStream;
+        await video.play();
+        captureButton.disabled = false;
+        status.textContent = "Arahkan sampul ke kamera dan tahan agar gambar stabil.";
+        window.setTimeout(inspectFrame, 200);
+      } catch (error) {
+        cameraStream?.getTracks().forEach((track) => track.stop());
+        video.srcObject = null;
+        const message = error.name === "NotAllowedError"
+          ? "Izin kamera ditolak. Izinkan akses kamera di browser untuk mulai scan."
+          : `Kamera tidak dapat dibuka: ${error.message}`;
+        status.textContent = message;
+      }
+    }
+
+    window.addEventListener("pagehide", () => {
+      cameraStream?.getTracks().forEach((track) => track.stop());
+    });
+
+    openCamera();
   </script>
 {% endblock %}

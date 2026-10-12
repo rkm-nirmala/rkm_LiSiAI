@@ -163,6 +163,63 @@ nav a:hover {
   margin-bottom: 1rem;
 }
 
+.scanner {
+  display: grid;
+  gap: 1rem;
+}
+
+.camera-view {
+  position: relative;
+  overflow: hidden;
+  min-height: 240px;
+  border-radius: 0.6rem;
+  background: #10212d;
+}
+
+.camera-view video {
+  display: block;
+  width: 100%;
+  max-height: min(65vh, 620px);
+  object-fit: contain;
+}
+
+.camera-guide {
+  position: absolute;
+  inset: 12% 15%;
+  border: 2px solid rgb(255 255 255 / 85%);
+  border-radius: 0.7rem;
+  box-shadow: 0 0 0 100vmax rgb(10 25 35 / 18%);
+  pointer-events: none;
+}
+
+.camera-status {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.5rem;
+  left: 0.75rem;
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.45rem;
+  background: rgb(13 31 42 / 82%);
+  color: #fff !important;
+  text-align: center;
+}
+
+.scanner textarea {
+  min-height: 8rem;
+  line-height: 1.6;
+}
+
+.scanner > .button {
+  justify-self: start;
+  margin-top: 0;
+}
+
+.scanner > .button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .section-heading {
   display: flex;
   align-items: center;
