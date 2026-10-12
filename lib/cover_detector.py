@@ -94,7 +94,9 @@ def _rectify_cover(gray, corners):
         dtype=np.float32,
     )
     transform = cv2.getPerspectiveTransform(corners, destination)
-    return cv2.warpPerspective(gray, transform, (target_width, target_height))
+    inverse_transform = cv2.getPerspectiveTransform(destination, corners)
+    cover = cv2.warpPerspective(gray, transform, (target_width, target_height))
+    return cover, inverse_transform
 
 
 def _overlap_ratio(first, second):
@@ -132,7 +134,7 @@ def _text_character_boxes(gray):
     return unique_boxes
 
 
-def _text_line_count(boxes):
+def _text_line_boxes(boxes):
     lines = []
     for box in sorted(boxes, key=lambda item: item[1] + item[3] / 2):
         center_y = box[1] + box[3] / 2
@@ -159,7 +161,7 @@ def _text_line_count(boxes):
             ) / len(matching_line["boxes"])
             matching_line["height"] = max(matching_line["height"], box[3])
 
-    text_lines = 0
+    text_lines = []
     for line in lines:
         ordered = sorted(line["boxes"], key=lambda item: item[0])
         groups = []
@@ -186,8 +188,34 @@ def _text_line_count(boxes):
                 for index in range(1, len(group))
             ) if len(group) >= 4 else 0
             if widths >= 1.25 or heights >= 1.5 or gaps >= 1.5:
-                text_lines += 1
+                text_lines.append(
+                    [
+                        min(box[0] for box in group),
+                        min(box[1] for box in group),
+                        max(box[0] + box[2] for box in group)
+                        - min(box[0] for box in group),
+                        max(box[1] + box[3] for box in group)
+                        - min(box[1] for box in group),
+                    ]
+                )
     return text_lines
+
+
+def _map_text_boxes(boxes, transform, width, height):
+    mapped_boxes = []
+    for x, y, box_width, box_height in boxes:
+        corners = np.array(
+            [[[x, y], [x + box_width, y], [x + box_width, y + box_height], [x, y + box_height]]],
+            dtype=np.float32,
+        )
+        mapped = cv2.perspectiveTransform(corners, transform)[0]
+        left = max(0, int(np.floor(mapped[:, 0].min())))
+        top = max(0, int(np.floor(mapped[:, 1].min())))
+        right = min(width, int(np.ceil(mapped[:, 0].max())))
+        bottom = min(height, int(np.ceil(mapped[:, 1].max())))
+        if right > left and bottom > top:
+            mapped_boxes.append([left, top, right - left, bottom - top])
+    return mapped_boxes
 
 
 def detect_text_regions(image_bytes):
@@ -206,17 +234,31 @@ def detect_text_regions(image_bytes):
         raise ValueError("Frame kamera tidak dapat dibaca sebagai gambar.")
 
     image = cv2.GaussianBlur(image, (3, 3), 0)
+    height, width = image.shape
     if float(np.std(image)) < 7:
-        return {"cover_detected": False, "text_detected": False, "text_lines": 0}
+        return {
+            "cover_detected": False,
+            "cover_corners": None,
+            "text_detected": False,
+            "text_lines": 0,
+            "text_boxes": [],
+        }
 
     corners = _find_cover_corners(image)
-    if corners is None:
-        return {"cover_detected": False, "text_detected": False, "text_lines": 0}
+    full_frame_text_boxes = _text_line_boxes(_text_character_boxes(image))
+    text_boxes = full_frame_text_boxes
+    if corners is not None:
+        cover, inverse_transform = _rectify_cover(image, corners)
+        cover_text_boxes = _text_line_boxes(_text_character_boxes(cover))
+        if len(cover_text_boxes) > len(full_frame_text_boxes):
+            text_boxes = _map_text_boxes(cover_text_boxes, inverse_transform, width, height)
 
-    cover = _rectify_cover(image, corners)
-    line_count = _text_line_count(_text_character_boxes(cover))
+    line_count = len(text_boxes)
+    text_detected = line_count > 0 if corners is not None else line_count >= 2
     return {
-        "cover_detected": True,
-        "text_detected": line_count > 0,
+        "cover_detected": corners is not None,
+        "cover_corners": corners.astype(int).tolist() if corners is not None else None,
+        "text_detected": text_detected,
         "text_lines": line_count,
+        "text_boxes": text_boxes,
     }

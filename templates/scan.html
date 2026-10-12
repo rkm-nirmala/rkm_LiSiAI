@@ -11,8 +11,9 @@
     <div class="panel scanner-panel">
       <div class="camera-view">
         <video id="camera" autoplay muted playsinline aria-label="Tampilan kamera untuk scan sampul"></video>
-        <img id="captured-preview" alt="Foto sampul yang diambil" hidden>
         <div id="camera-guide" class="camera-guide" aria-hidden="true"></div>
+        <canvas id="detection-overlay" aria-hidden="true"></canvas>
+        <img id="captured-preview" alt="Foto sampul yang diambil" hidden>
         <p id="camera-status" class="camera-status" role="status" aria-live="polite">Membuka kamera...</p>
       </div>
       <div class="camera-actions">
@@ -30,6 +31,7 @@
   <canvas id="capture-canvas" hidden></canvas>
   <script>
     const video = document.querySelector("#camera");
+    const overlay = document.querySelector("#detection-overlay");
     const preview = document.querySelector("#captured-preview");
     const guide = document.querySelector("#camera-guide");
     const status = document.querySelector("#camera-status");
@@ -44,6 +46,7 @@
     sampleCanvas.width = 160;
     sampleCanvas.height = 120;
     const sampleContext = sampleCanvas.getContext("2d", { willReadFrequently: true });
+    const overlayContext = overlay.getContext("2d");
 
     let cameraStream;
     let previewUrl;
@@ -56,6 +59,33 @@
       cameraStream?.getTracks().forEach((track) => track.stop());
       cameraStream = null;
       video.srcObject = null;
+    }
+
+    function drawDetections(result) {
+      if (overlay.width !== sampleCanvas.width || overlay.height !== sampleCanvas.height) {
+        overlay.width = sampleCanvas.width;
+        overlay.height = sampleCanvas.height;
+      }
+      overlayContext.clearRect(0, 0, overlay.width, overlay.height);
+
+      if (result.cover_corners?.length === 4) {
+        overlayContext.beginPath();
+        result.cover_corners.forEach(([x, y], index) => {
+          if (index === 0) overlayContext.moveTo(x, y);
+          else overlayContext.lineTo(x, y);
+        });
+        overlayContext.closePath();
+        overlayContext.lineWidth = 3;
+        overlayContext.strokeStyle = "#2ee58f";
+        overlayContext.stroke();
+      }
+
+      overlayContext.lineWidth = 2;
+      const textBoxes = result.text_boxes || [];
+      overlayContext.strokeStyle = textBoxes.length ? "#ffd43b" : "#ff6b6b";
+      for (const [x, y, width, height] of textBoxes) {
+        overlayContext.strokeRect(x, y, width, height);
+      }
     }
 
     async function inspectFrame() {
@@ -76,18 +106,24 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Deteksi teks gagal.");
 
-        const bookDetected = result.cover_detected && result.text_detected;
-        consecutiveBookFrames = bookDetected ? consecutiveBookFrames + 1 : 0;
+        drawDetections(result);
+        const textDetected = result.text_detected;
+        consecutiveBookFrames = textDetected ? consecutiveBookFrames + 1 : 0;
         if (consecutiveBookFrames >= 3) {
-          status.textContent = "Sampul buku terdeteksi. Mengambil foto...";
+          status.textContent = "Teks terdeteksi. Mengambil foto...";
           await captureImage();
           return;
         }
-        status.textContent = bookDetected
-          ? "Sampul dan teks terdeteksi. Tahan posisi kamera..."
-          : "Pastikan seluruh sampul terlihat dan teksnya jelas.";
+        status.textContent = textDetected
+          ? result.cover_detected
+            ? "Sampul dan teks terdeteksi. Tahan posisi kamera..."
+            : "Teks terdeteksi tanpa garis sampul. Tahan posisi kamera..."
+          : result.text_lines > 0
+            ? "Pola teks terlihat. Jika tepi sampul tidak terbaca, pastikan minimal dua baris teks terlihat."
+            : "Belum terdeteksi. Garis hijau menandai sampul, kotak kuning menandai teks.";
       } catch (error) {
         consecutiveBookFrames = 0;
+        drawDetections({});
         status.textContent = `Deteksi lokal tidak tersedia: ${error.message}`;
       } finally {
         detectionInProgress = false;
@@ -117,6 +153,7 @@
         preview.src = previewUrl;
         preview.hidden = false;
         video.hidden = true;
+        overlay.hidden = true;
         guide.hidden = true;
         captureButton.hidden = true;
         retakeButton.hidden = false;
@@ -150,6 +187,8 @@
       preview.removeAttribute("src");
       preview.hidden = true;
       video.hidden = false;
+      overlay.hidden = false;
+      overlayContext.clearRect(0, 0, overlay.width, overlay.height);
       guide.hidden = false;
       captureButton.hidden = false;
       retakeButton.hidden = true;

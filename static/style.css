@@ -188,11 +188,18 @@ nav a:hover {
 }
 
 .camera-view video,
-.camera-view img {
+.camera-view img,
+.camera-view canvas {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.camera-view canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .camera-view [hidden] {
@@ -202,9 +209,8 @@ nav a:hover {
 .camera-guide {
   position: absolute;
   inset: 12% 15%;
-  border: 2px solid rgb(255 255 255 / 85%);
+  border: 2px dashed rgb(255 255 255 / 65%);
   border-radius: 0.7rem;
-  box-shadow: 0 0 0 100vmax rgb(10 25 35 / 18%);
   pointer-events: none;
 }
 
