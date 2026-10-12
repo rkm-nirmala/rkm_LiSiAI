@@ -4,6 +4,7 @@ from itertools import count
 
 from flask import Flask, jsonify, render_template, request
 
+from lib.cover_detector import detect_text_regions
 from lib.ocr_service import OCRServiceError, SUPPORTED_LANGUAGES, extract_text
 
 
@@ -47,6 +48,18 @@ def ocr():
         return jsonify(response), error.status_code
 
     return jsonify(result)
+
+
+@app.post("/detect-text")
+def detect_text():
+    image = request.files.get("image")
+    if image is None or not image.filename:
+        return jsonify(error="Kirim frame kamera melalui multipart field 'image'."), 400
+
+    try:
+        return jsonify(detect_text_regions(image.stream.read()))
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
 
 
 @app.post("/ask")

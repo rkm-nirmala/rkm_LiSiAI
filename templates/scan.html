@@ -5,7 +5,7 @@
 {% block content %}
   <section class="page-heading">
     <h1>Scan sampul buku</h1>
-    <p>Arahkan sampul ke kamera. Tahan posisi agar gambar bisa diambil dan teksnya dibaca.</p>
+    <p>Arahkan sampul ke kamera. Gambar akan diambil otomatis setelah OpenCV mendeteksi teks.</p>
   </section>
   <section class="scanner-grid">
     <div class="panel scanner-panel">
@@ -47,9 +47,9 @@
 
     let cameraStream;
     let previewUrl;
-    let previousFrame;
-    let stableSince = 0;
     let captureInProgress = false;
+    let detectionInProgress = false;
+    let consecutiveTextFrames = 0;
     let autoCapture = true;
 
     function stopCamera() {
@@ -58,53 +58,41 @@
       video.srcObject = null;
     }
 
-    function inspectFrame() {
-      if (!autoCapture || captureInProgress || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-        if (autoCapture) window.setTimeout(inspectFrame, 200);
+    async function inspectFrame() {
+      if (!autoCapture || captureInProgress || detectionInProgress) return;
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        window.setTimeout(inspectFrame, 300);
         return;
       }
 
       sampleContext.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
-      const pixels = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
-      const luminance = new Uint8Array(sampleCanvas.width * sampleCanvas.height);
-      let edges = 0;
-      for (let y = 0; y < sampleCanvas.height; y += 1) {
-        for (let x = 0; x < sampleCanvas.width; x += 1) {
-          const pixel = (y * sampleCanvas.width + x) * 4;
-          const light = Math.round(
-            pixels[pixel] * 0.299 + pixels[pixel + 1] * 0.587 + pixels[pixel + 2] * 0.114,
-          );
-          luminance[y * sampleCanvas.width + x] = light;
-          if (
-            x > 0 &&
-            (Math.abs(light - luminance[y * sampleCanvas.width + x - 1]) > 35 ||
-              (y > 0 &&
-                Math.abs(light - luminance[(y - 1) * sampleCanvas.width + x]) > 35))
-          ) {
-            edges += 1;
-          }
+      detectionInProgress = true;
+      try {
+        const blob = await new Promise((resolve) => sampleCanvas.toBlob(resolve, "image/jpeg", 0.5));
+        if (!blob) throw new Error("Frame kamera tidak dapat dibuat.");
+        const formData = new FormData();
+        formData.append("image", blob, "frame.jpg");
+        const response = await fetch("/detect-text", { method: "POST", body: formData });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Deteksi teks gagal.");
+
+        consecutiveTextFrames = result.text_detected ? consecutiveTextFrames + 1 : 0;
+        if (consecutiveTextFrames >= 3) {
+          status.textContent = "Teks terdeteksi. Mengambil foto sampul...";
+          await captureImage();
+          return;
         }
+        status.textContent = result.text_detected
+          ? "Pola teks terdeteksi. Tahan posisi kamera..."
+          : "Arahkan sampul ke kamera. Menunggu teks terdeteksi...";
+      } catch (error) {
+        consecutiveTextFrames = 0;
+        status.textContent = `Deteksi lokal tidak tersedia: ${error.message}`;
+      } finally {
+        detectionInProgress = false;
       }
 
-      const now = performance.now();
-      let difference = Infinity;
-      if (previousFrame) {
-        let totalDifference = 0;
-        for (let index = 0; index < luminance.length; index += 1) {
-          totalDifference += Math.abs(luminance[index] - previousFrame[index]);
-        }
-        difference = totalDifference / luminance.length;
-      }
-
-      stableSince = difference < 8 ? stableSince || now : 0;
-      previousFrame = luminance;
-
-      if (stableSince && now - stableSince >= 1400 && edges / luminance.length > 0.015) {
-        captureImage();
-        return;
-      }
-
-      window.setTimeout(inspectFrame, 200);
+      if (autoCapture) window.setTimeout(inspectFrame, 700);
     }
 
     async function captureImage() {
@@ -168,8 +156,8 @@
       textField.value = "";
       askButton.disabled = true;
       aiResult.textContent = "";
-      previousFrame = null;
-      stableSince = 0;
+      consecutiveTextFrames = 0;
+      detectionInProgress = false;
       autoCapture = true;
       status.textContent = "Membuka kamera...";
 
@@ -189,9 +177,12 @@
         });
         video.srcObject = cameraStream;
         await video.play();
+        const sampleScale = Math.min(320 / video.videoWidth, 240 / video.videoHeight);
+        sampleCanvas.width = Math.max(1, Math.round(video.videoWidth * sampleScale));
+        sampleCanvas.height = Math.max(1, Math.round(video.videoHeight * sampleScale));
         captureButton.disabled = false;
-        status.textContent = "Arahkan sampul ke kamera dan tahan agar gambar stabil.";
-        window.setTimeout(inspectFrame, 200);
+        status.textContent = "Arahkan sampul ke kamera. Menunggu teks terdeteksi...";
+        window.setTimeout(inspectFrame, 700);
       } catch (error) {
         stopCamera();
         autoCapture = false;
