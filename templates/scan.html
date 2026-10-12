@@ -18,6 +18,7 @@
         <div class="panel-heading">
           <div>
             <h2>Preview Kamera</h2>
+            <p id="camera-heading-status">Membuka kamera...</p>
           </div>
           <span id="camera-indicator" class="camera-indicator" aria-label="Status kamera"></span>
         </div>
@@ -29,6 +30,10 @@
           <div id="capture-flash" class="capture-flash" aria-hidden="true"></div>
         </div>
         <canvas id="capture-canvas" hidden></canvas>
+        <div class="detection-status" aria-live="polite">
+          <span id="detection-dot" class="detection-dot"></span>
+          <span id="camera-status" class="camera-status">Membuka kamera...</span>
+        </div>
         <div class="camera-actions">
           <button id="capture" class="button button-secondary" type="button" disabled>● Ambil Manual</button>
           <button id="retake" class="button" type="button" hidden>↻ Ulangi Scan</button>
@@ -39,9 +44,12 @@
         <div class="panel-heading">
           <div>
             <h2>Hasil OCR</h2>
+            <p>Teks yang dibaca dari sampul buku</p>
           </div>
+          <span id="ocr-badge" class="ocr-badge">BELUM AKTIF</span>
         </div>
         <div class="ocr-content">
+          <label for="extracted-text" class="ocr-label">Teks hasil pembacaan</label>
           <textarea id="extracted-text" name="text" rows="8" placeholder="Hasil OCR akan muncul setelah gambar diproses..." autocomplete="off"></textarea>
           <p class="edit-hint">Periksa atau edit teks sebelum meminta analisis AI.</p>
           <button id="ask-ai" class="button" type="button" disabled>✦ Tanya AI</button>
@@ -59,7 +67,10 @@
     const overlay = document.querySelector("#detection-overlay");
     const preview = document.querySelector("#captured-preview");
     const guide = document.querySelector("#camera-guide");
+    const status = document.querySelector("#camera-status");
+    const headingStatus = document.querySelector("#camera-heading-status");
     const cameraIndicator = document.querySelector("#camera-indicator");
+    const detectionDot = document.querySelector("#detection-dot");
     const flash = document.querySelector("#capture-flash");
     const ocrBadge = document.querySelector("#ocr-badge");
     const ocrFooter = document.querySelector("#ocr-footer");
@@ -86,7 +97,9 @@
     let autoCapture = true;
 
     function setStatus(message, state = "waiting") {
-      cameraIndicator.setAttribute("aria-label", `${state}: ${message}`);
+      status.textContent = message;
+      headingStatus.textContent = message;
+      detectionDot.className = `detection-dot ${state}`;
     }
 
     function stopCamera() {
