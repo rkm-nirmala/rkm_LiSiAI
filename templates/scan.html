@@ -14,8 +14,8 @@
         <div id="camera-guide" class="camera-guide" aria-hidden="true"></div>
         <canvas id="detection-overlay" aria-hidden="true"></canvas>
         <img id="captured-preview" alt="Foto sampul yang diambil" hidden>
-        <p id="camera-status" class="camera-status" role="status" aria-live="polite">Membuka kamera...</p>
       </div>
+      <p id="camera-status" class="camera-status" role="status" aria-live="polite">Membuka kamera...</p>
       <div class="camera-actions">
         <button id="capture" class="button button-secondary" type="button" disabled>Ambil gambar sekarang</button>
         <button id="retake" class="button button-secondary" type="button" hidden>Foto ulang</button>
@@ -53,6 +53,8 @@
     let captureInProgress = false;
     let detectionInProgress = false;
     let consecutiveBookFrames = 0;
+    let previousFrame;
+    let stableSince = 0;
     let autoCapture = true;
 
     function stopCamera() {
@@ -88,6 +90,32 @@
       }
     }
 
+    function readFrameLuminance() {
+      const pixels = sampleContext.getImageData(
+        0,
+        0,
+        sampleCanvas.width,
+        sampleCanvas.height,
+      ).data;
+      const luminance = new Uint8Array(sampleCanvas.width * sampleCanvas.height);
+      for (let index = 0; index < luminance.length; index += 1) {
+        const pixel = index * 4;
+        luminance[index] = Math.round(
+          pixels[pixel] * 0.299 + pixels[pixel + 1] * 0.587 + pixels[pixel + 2] * 0.114,
+        );
+      }
+      return luminance;
+    }
+
+    function frameDifference(currentFrame, lastFrame) {
+      if (!lastFrame) return Infinity;
+      let totalDifference = 0;
+      for (let index = 0; index < currentFrame.length; index += 1) {
+        totalDifference += Math.abs(currentFrame[index] - lastFrame[index]);
+      }
+      return totalDifference / currentFrame.length;
+    }
+
     async function inspectFrame() {
       if (!autoCapture || captureInProgress || detectionInProgress) return;
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -96,6 +124,9 @@
       }
 
       sampleContext.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+      const frame = readFrameLuminance();
+      const difference = frameDifference(frame, previousFrame);
+      previousFrame = frame;
       detectionInProgress = true;
       try {
         const blob = await new Promise((resolve) => sampleCanvas.toBlob(resolve, "image/jpeg", 0.5));
@@ -108,21 +139,35 @@
 
         drawDetections(result);
         const textDetected = result.text_detected;
-        consecutiveBookFrames = textDetected ? consecutiveBookFrames + 1 : 0;
-        if (consecutiveBookFrames >= 3) {
-          status.textContent = "Teks terdeteksi. Mengambil foto...";
+        const now = performance.now();
+        if (textDetected && difference < 8) {
+          consecutiveBookFrames += 1;
+          stableSince ||= now;
+        } else if (textDetected) {
+          consecutiveBookFrames = 1;
+          stableSince = now;
+        } else {
+          consecutiveBookFrames = 0;
+          stableSince = 0;
+        }
+
+        if (consecutiveBookFrames >= 3 && now - stableSince >= 1400) {
+          status.textContent = "Teks terdeteksi dan gambar stabil. Mengambil foto...";
           await captureImage();
           return;
         }
         status.textContent = textDetected
-          ? result.cover_detected
-            ? "Sampul dan teks terdeteksi. Tahan posisi kamera..."
-            : "Teks terdeteksi tanpa garis sampul. Tahan posisi kamera..."
+          ? difference >= 8
+            ? "Teks terlihat. Tahan kamera agar gambar stabil..."
+            : result.cover_detected
+              ? "Sampul dan teks terdeteksi. Menunggu gambar stabil..."
+              : "Teks terdeteksi tanpa garis sampul. Menunggu gambar stabil..."
           : result.text_lines > 0
             ? "Pola teks terlihat. Jika tepi sampul tidak terbaca, pastikan minimal dua baris teks terlihat."
             : "Belum terdeteksi. Garis hijau menandai sampul, kotak kuning menandai teks.";
       } catch (error) {
         consecutiveBookFrames = 0;
+        stableSince = 0;
         drawDetections({});
         status.textContent = `Deteksi lokal tidak tersedia: ${error.message}`;
       } finally {
@@ -197,6 +242,8 @@
       askButton.disabled = true;
       aiResult.textContent = "";
       consecutiveBookFrames = 0;
+      previousFrame = null;
+      stableSince = 0;
       detectionInProgress = false;
       autoCapture = true;
       status.textContent = "Membuka kamera...";
