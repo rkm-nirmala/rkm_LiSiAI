@@ -158,16 +158,16 @@ Bahasa antarmuka scan tidak meminta pemustaka memilih bahasa; scan mengirim nila
 2. Flask memvalidasi keberadaan `device`, `status`, dan tujuh nilai numerik pengukuran; lalu mengganti `latest_sensor_reading` dengan bacaan yang baru diterima.
 3. Halaman `/monitor` mengambil `GET /sensor`, menampilkan status perangkat, kelembapan tanah, suhu tanah, suhu dan kelembapan udara, serta waktu penerimaan. Polling berjalan setiap lima detik; tombol refresh juga tersedia.
 4. Ketika pengguna menekan tombol analisis, halaman mengirim task `sensor_analysis` dan snapshot bacaan terbaru ke `/ask`; prompt tetap menentukan tugas tanpa input pertanyaan manual.
-5. Prompt sensor menginstruksikan Ollama menjawab berdasarkan data yang dikirim, tidak mengarang pengukuran, dan menyebutkan ketidakpastian satuan/konteks.
+5. Prompt sensor menginstruksikan Ollama menjelaskan kondisi utama terlebih dahulu, memberi opsi tindakan sederhana dan aman, lalu merangkum data pendukung. Prompt membedakan bacaan sensor dari kondisi tanaman yang teramati dan meminta model mengakui ketidakpastian satuan/kalibrasi/konteks.
 
 Walaupun UI menyebut sensor DS18B20 dan DHT11, backend menerima nilai yang diposting oleh perangkat dan tidak memverifikasi model fisik atau kalibrasi sensornya. Nama/unit itu harus diperlakukan sebagai rancangan integrasi, bukan hasil verifikasi perangkat keras.
 
 ## 6. Pemisahan prompt dan data untuk AI
 
-- `prompts/book_scan.txt`: instruksi berbahasa Indonesia untuk mengidentifikasi judul/penulis jika terlihat, memberi ringkasan yang hanya didukung teks sampul, tidak mengarang fakta, dan mengakui ketidakpastian OCR.
+- `prompts/book_scan.txt`: instruksi berbahasa Indonesia untuk mengidentifikasi judul/penulis, menyarankan koreksi OCR yang cukup kuat tanpa mengubah teks asli, memanfaatkan sinopsis katalog jika cocok, dan membedakan fakta dari dugaan.
 - `data/db.csv`: katalog lokal dengan header `judul,pengarang,isbn,sinopsis,penerbit,tahun`; file awal di repository hanya menyediakan header dan belum berisi data bibliografi.
 - `data/book_catalog.py`: pencarian ISBN dan pemeringkatan kandidat judul/pengarang menggunakan kemiripan string; ambang `65%` adalah heuristik awal, bukan confidence statistik yang telah divalidasi. Kandidat terbaik tetap disertakan jika skor rendah, bersama peringatan.
-- `prompts/sensor_analysis.txt`: instruksi tetap untuk menganalisis bacaan sensor terbaru, menyebut nilai/satuan jika tersedia, serta tidak membuat pengukuran, ambang ideal, atau diagnosis.
+- `prompts/sensor_analysis.txt`: instruksi tetap untuk memprioritaskan kondisi utama, memberi opsi tindakan praktis, dan meringkas data pendukung tanpa mengarang pengukuran, satuan, ambang ideal, atau diagnosis.
 - `data/book_scan.py`: validasi teks hasil scan dan batas panjang, membentuk objek `extracted_text` bersama hasil pencarian katalog.
 - `data/sensor_analysis.py`: memvalidasi dan membentuk objek `latest_reading`; tidak ada prompt/pertanyaan manual dari halaman monitor.
 - `lib/ask_service.py`: memilih file prompt berdasarkan task, mengambil pengaturan Ollama dari environment, mengirim system prompt dan JSON data sebagai pesan user ke `POST /api/chat`, lalu memvalidasi respons.
