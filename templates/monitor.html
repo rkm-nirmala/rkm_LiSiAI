@@ -57,6 +57,7 @@
   </div>
   <script>
     let latestReading = null;
+    let analysisInProgress = false;
 
     function setValue(id, value) {
       document.querySelector(`#${id}`).textContent = value ?? "--";
@@ -84,7 +85,7 @@
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "Gagal memuat data sensor.");
         latestReading = body.reading;
-        document.querySelector("#ask-sensor").disabled = !latestReading;
+        document.querySelector("#ask-sensor").disabled = !latestReading || analysisInProgress;
         if (latestReading) {
           formatReading(latestReading);
         } else {
@@ -107,9 +108,10 @@
     }
     document.querySelector("#refresh").addEventListener("click", loadReading);
     document.querySelector("#ask-sensor").addEventListener("click", async () => {
-      if (!latestReading) return;
+      if (!latestReading || analysisInProgress) return;
       const button = document.querySelector("#ask-sensor");
       const result = document.querySelector("#ask-result");
+      analysisInProgress = true;
       button.disabled = true;
       result.textContent = "Menganalisis bacaan sensor...";
       try {
@@ -127,6 +129,7 @@
       } catch (error) {
         result.textContent = `Analisis tidak tersedia: ${error.message}`;
       } finally {
+        analysisInProgress = false;
         button.disabled = !latestReading;
       }
     });
