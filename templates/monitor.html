@@ -8,9 +8,7 @@
 
     <header class="page-header">
       <div>
-        <p class="eyebrow">Smart Plant Monitor · ESP32</p>
         <h1>Monitor Tanaman</h1>
-        <p class="subtitle">Pantau kelembapan tanah dan kondisi udara dari sensor tanaman.</p>
       </div>
       <span id="connectionBadge" class="status-badge offline">● Menunggu data</span>
     </header>
@@ -19,33 +17,28 @@
       <article class="theme-sensor-card soil-moisture">
         <span class="card-label">Kelembapan Tanah</span>
         <div class="metric"><span id="soilMoisture">--</span><small>%</small></div>
-        <p id="soilMoistureTime">Belum ada data</p>
       </article>
       <article class="theme-sensor-card soil-temperature">
-        <span class="card-label">Suhu Tanah · DS18B20</span>
+        <span class="card-label">Suhu Tanah</span>
         <div class="metric"><span id="soilTemperature">--</span><small>°C</small></div>
-        <p id="soilTemperatureTime">Belum ada data</p>
       </article>
       <article class="theme-sensor-card air-temperature">
-        <span class="card-label">Suhu Udara · DHT11</span>
+        <span class="card-label">Suhu Udara</span>
         <div class="metric"><span id="airTemperature">--</span><small>°C</small></div>
-        <p id="airTemperatureTime">Belum ada data</p>
       </article>
       <article class="theme-sensor-card air-humidity">
-        <span class="card-label">Kelembapan Udara · DHT11</span>
+        <span class="card-label">Kelembapan Udara</span>
         <div class="metric"><span id="airHumidity">--</span><small>%</small></div>
-        <p id="airHumidityTime">Belum ada data</p>
       </article>
     </section>
 
     <section class="panel device-panel">
       <div>
-        <p class="eyebrow">PERANGKAT</p>
         <h2 id="device">Menunggu perangkat</h2>
-        <p id="deviceStatus" class="muted">Kirim data sensor untuk memulai pemantauan.</p>
+        <p id="deviceStatus" class="muted">Kirim data sensor untuk memulai.</p>
       </div>
       <div class="panel-actions">
-        <span id="lastUpdate" class="muted">Belum diperbarui</span>
+        <span id="lastUpdate" class="muted"></span>
         <button id="refresh" class="button button-secondary" type="button">Refresh data</button>
       </div>
     </section>
@@ -53,17 +46,14 @@
     <section class="panel ai-panel">
       <div class="panel-heading">
         <div>
-          <p class="eyebrow">BANTUAN AI LOKAL</p>
           <h2>Analisis Kondisi Tanaman</h2>
-          <p class="muted">Analisis otomatis berdasarkan bacaan sensor terbaru.</p>
         </div>
       </div>
-      <button id="ask-sensor" class="button" type="button" disabled>✦ Analisis dengan AI</button>
+      <button id="ask-sensor" class="button" type="button" disabled>Analisis dengan AI</button>
       <div id="ask-result" class="theme-ai-result" role="status" aria-live="polite">
-        Jawaban AI akan ditampilkan di sini.
+        Jawaban AI akan muncul di sini.
       </div>
     </section>
-    <p class="page-note">Data menampilkan bacaan terbaru dan diperbarui otomatis setiap 5 detik.</p>
   </div>
   <script>
     let latestReading = null;
@@ -79,13 +69,9 @@
       setValue("soilTemperature", data.soil_temperature);
       setValue("airTemperature", data.air_temperature);
       setValue("airHumidity", data.air_humidity);
-      setValue("soilMoistureTime", receivedAt);
-      setValue("soilTemperatureTime", receivedAt);
-      setValue("airTemperatureTime", receivedAt);
-      setValue("airHumidityTime", receivedAt);
       setValue("device", data.device);
       setValue("deviceStatus", `Status perangkat: ${data.status}`);
-      setValue("lastUpdate", `Terakhir diterima: ${receivedAt}`);
+      setValue("lastUpdate", `Diperbarui ${receivedAt}`);
       const badge = document.querySelector("#connectionBadge");
       const isOnline = data.status.toLowerCase() === "online";
       badge.className = `status-badge ${isOnline ? "online" : "offline"}`;
@@ -108,7 +94,7 @@
             "soilMoisture", "soilTemperature", "airTemperature", "airHumidity",
           ]) setValue(id, "--");
           setValue("device", "Menunggu perangkat");
-          setValue("deviceStatus", "Kirim data sensor untuk memulai pemantauan.");
+          setValue("deviceStatus", "Kirim data sensor untuk memulai.");
           setValue("lastUpdate", "Belum diperbarui");
         }
       } catch (error) {

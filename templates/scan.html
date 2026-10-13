@@ -7,9 +7,8 @@
     <a href="/dashboard" class="back-link">← Kembali ke Dashboard</a>
     <header class="page-header">
       <div>
-        <p class="eyebrow">Image capture · LibraScan</p>
-        <h1>Scan Cover</h1>
-        <p class="subtitle">Arahkan sampul buku ke kamera. Saat teks terdeteksi dan gambar stabil, foto akan diambil otomatis.</p>
+        <h1>Scan Sampul</h1>
+        <p class="subtitle">Arahkan sampul buku ke kamera untuk memulai scan.</p>
       </div>
     </header>
 
@@ -30,8 +29,8 @@
         </div>
         <canvas id="capture-canvas" hidden></canvas>
         <div class="camera-actions">
-          <button id="capture" class="button button-secondary" type="button" disabled>● Ambil Manual</button>
-          <button id="retake" class="button" type="button" hidden>↻ Ulangi Scan</button>
+          <button id="capture" class="button button-secondary" type="button" disabled>Ambil foto</button>
+          <button id="retake" class="button" type="button" hidden>Scan ulang</button>
         </div>
       </div>
 
@@ -43,8 +42,8 @@
         </div>
         <div class="ocr-content">
           <textarea id="extracted-text" name="text" rows="8" placeholder="Hasil OCR akan muncul setelah gambar diproses..." autocomplete="off"></textarea>
-          <p class="edit-hint">Periksa atau edit teks sebelum meminta analisis AI.</p>
-          <button id="ask-ai" class="button" type="button" disabled>✦ Tanya AI</button>
+          <p class="edit-hint">Edit teks jika perlu, lalu tanyakan ke AI.</p>
+          <button id="ask-ai" class="button" type="button" disabled>Tanya AI</button>
         </div>
         <div class="ai-output-wrap">
           <h3>Analisis AI</h3>
