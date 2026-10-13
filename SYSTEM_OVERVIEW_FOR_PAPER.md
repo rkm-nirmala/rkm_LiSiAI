@@ -129,9 +129,10 @@ Task yang diterima `/ask` adalah `book_scan` dan `sensor_analysis`. Teks scan di
 - Membaca format gambar yang dikenali Pillow; file tidak dipercaya hanya berdasarkan MIME type.
 - Menolak gambar dengan resolusi lebih dari 25 megapiksel.
 - Mengoreksi orientasi EXIF, mengubah ke grayscale, memperbesar gambar kecil hingga sisi terpanjang minimum 1.200 piksel, melakukan autocontrast, dan unsharp mask.
+- Sebelum OCR, menjalankan detektor teks OpenCV pada thumbnail maksimum 320 × 240 piksel. Jika baris teks terdeteksi, memetakan kotak ke gambar beresolusi penuh, memperluas area dengan margin, dan memotong gambar ke area teks. Jika tidak ada kotak yang terdeteksi atau crop mencakup hampir seluruh gambar, OCR tetap memakai gambar penuh.
 - Memastikan executable Tesseract dan data bahasa yang diminta tersedia.
 - Memanggil pytesseract dengan `--oem 1 --psm 11` untuk deteksi teks dengan tata letak relatif bebas.
-- Mengembalikan teks yang disusun per baris, bahasa, dan rata-rata confidence kata yang memiliki confidence nonnegatif. Jika tidak ada kata yang dikenali, confidence adalah `null`.
+- Mengembalikan teks yang disusun per baris, bahasa, rata-rata confidence kata yang memiliki confidence nonnegatif, status crop dan koordinat crop pada citra hasil preprocessing. Jika tidak ada kata yang dikenali, confidence adalah `null`.
 - Endpoint membatasi request body sampai 16 MB.
 
 Bahasa antarmuka scan tidak meminta pemustaka memilih bahasa; scan mengirim nilai default `ind+eng`. Endpoint masih menyediakan parameter bahasa untuk pemanggil lain.

@@ -1,3 +1,4 @@
+from io import BytesIO
 from statistics import mean
 
 from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
@@ -8,6 +9,8 @@ from pytesseract import (
     get_languages,
     image_to_data,
 )
+
+from lib.cover_detector import detect_text_regions
 
 
 SUPPORTED_LANGUAGES = ("ind", "eng", "ind+eng")
@@ -36,7 +39,43 @@ def _prepare_image(upload):
         )
 
     image = ImageOps.autocontrast(image)
-    return image.filter(ImageFilter.UnsharpMask(radius=1.2, percent=140, threshold=3))
+    return image
+
+
+def _crop_to_text_regions(image):
+    thumbnail = image.copy()
+    thumbnail.thumbnail((320, 240), Image.Resampling.LANCZOS)
+    frame = BytesIO()
+    thumbnail.save(frame, format="JPEG", quality=85)
+    detection = detect_text_regions(frame.getvalue())
+    text_boxes = detection["text_boxes"]
+    if not text_boxes:
+        return image, None
+
+    scale_x = image.width / thumbnail.width
+    scale_y = image.height / thumbnail.height
+    left = min(box[0] for box in text_boxes)
+    top = min(box[1] for box in text_boxes)
+    right = max(box[0] + box[2] for box in text_boxes)
+    bottom = max(box[1] + box[3] for box in text_boxes)
+    padding_x = max(12, round((right - left) * 0.12))
+    padding_y = max(12, round((bottom - top) * 0.35))
+    bounds = (
+        max(0, round((left - padding_x) * scale_x)),
+        max(0, round((top - padding_y) * scale_y)),
+        min(image.width, round((right + padding_x) * scale_x)),
+        min(image.height, round((bottom + padding_y) * scale_y)),
+    )
+    crop_width = bounds[2] - bounds[0]
+    crop_height = bounds[3] - bounds[1]
+    if (
+        crop_width <= 0
+        or crop_height <= 0
+        or crop_width * crop_height >= image.width * image.height * 0.95
+    ):
+        return image, None
+
+    return image.crop(bounds), bounds
 
 
 def extract_text(upload, language="ind+eng"):
@@ -63,6 +102,9 @@ def extract_text(upload, language="ind+eng"):
             f"Gambar tidak dapat diproses: {error}",
             status_code=400,
         ) from error
+
+    image, crop_bounds = _crop_to_text_regions(image)
+    image = image.filter(ImageFilter.UnsharpMask(radius=1.2, percent=140, threshold=3))
 
     try:
         installed_languages = set(get_languages(config=""))
@@ -119,4 +161,6 @@ def extract_text(upload, language="ind+eng"):
         "confidence": round(mean(confidence for _word, confidence in recognized_words), 2)
         if recognized_words
         else None,
+        "crop_applied": crop_bounds is not None,
+        "crop_bounds": list(crop_bounds) if crop_bounds is not None else None,
     }
