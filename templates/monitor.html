@@ -55,14 +55,10 @@
         <div>
           <p class="eyebrow">BANTUAN AI LOKAL</p>
           <h2>Analisis Kondisi Tanaman</h2>
-          <p class="muted">Tanyakan sesuatu tentang bacaan sensor terbaru.</p>
+          <p class="muted">Analisis otomatis berdasarkan bacaan sensor terbaru.</p>
         </div>
       </div>
-      <form id="ask-form">
-        <label for="prompt">Pertanyaan</label>
-        <textarea id="prompt" name="prompt" rows="3" placeholder="Contoh: Apakah kelembapan tanah ini cukup untuk tanaman?" required></textarea>
-        <button id="ask-sensor" class="button" type="submit" disabled>✦ Analisis dengan AI</button>
-      </form>
+      <button id="ask-sensor" class="button" type="button" disabled>✦ Analisis dengan AI</button>
       <div id="ask-result" class="theme-ai-result" role="status" aria-live="polite">
         Jawaban AI akan ditampilkan di sini.
       </div>
@@ -123,10 +119,8 @@
         document.querySelector("#deviceStatus").textContent = error.message;
       }
     }
-
     document.querySelector("#refresh").addEventListener("click", loadReading);
-    document.querySelector("#ask-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
+    document.querySelector("#ask-sensor").addEventListener("click", async () => {
       if (!latestReading) return;
       const button = document.querySelector("#ask-sensor");
       const result = document.querySelector("#ask-result");
@@ -138,7 +132,6 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             task: "sensor_analysis",
-            question: document.querySelector("#prompt").value,
             latest_reading: latestReading,
           }),
         });

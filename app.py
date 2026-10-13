@@ -1,5 +1,4 @@
 import math
-import os
 from datetime import datetime, timezone
 from itertools import count
 
@@ -9,21 +8,11 @@ from data.book_scan import BookScanDataError, build_book_scan_data
 from data.sensor_analysis import SensorAnalysisDataError, build_sensor_analysis_data
 from lib.ask_service import AskServiceError, ask_ollama
 from lib.cover_detector import detect_text_regions
-from lib.easyocr_service import extract_text as extract_text_easyocr
-from lib.ocr_service import (
-    OCRServiceError,
-    SUPPORTED_LANGUAGES,
-    extract_text as extract_text_tesseract,
-)
+from lib.ocr_service import OCRServiceError, SUPPORTED_LANGUAGES, extract_text
 
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
-app.config["OCR_ENGINE"] = os.getenv("OCR_ENGINE", "tesseract").strip().lower()
-OCR_ENGINES = {
-    "tesseract": extract_text_tesseract,
-    "easyocr": extract_text_easyocr,
-}
 
 reading_ids = count(1)
 latest_sensor_reading = None
@@ -47,22 +36,12 @@ def ocr():
             method="POST",
             field="image",
             languages=list(SUPPORTED_LANGUAGES),
-            engine=app.config["OCR_ENGINE"],
-            available_engines=list(OCR_ENGINES),
         )
 
     image = request.files.get("image")
     if image is None or not image.filename:
         return jsonify(error="Kirim gambar melalui field multipart/form-data 'image'."), 400
     language = request.form.get("language", "ind+eng")
-    engine = app.config["OCR_ENGINE"]
-    extract_text = OCR_ENGINES.get(engine)
-    if extract_text is None:
-        return (
-            jsonify(error=f"Engine OCR '{engine}' tidak dikenal. Pilih tesseract atau easyocr."),
-            500,
-        )
-
     try:
         result = extract_text(image.stream, language)
     except OCRServiceError as error:
@@ -71,7 +50,6 @@ def ocr():
             response["install_hint"] = error.install_hint
         return jsonify(response), error.status_code
 
-    result["engine"] = engine
     return jsonify(result)
 
 
@@ -99,7 +77,6 @@ def ask():
             data = build_book_scan_data(payload.get("extracted_text"))
         elif task == "sensor_analysis":
             data = build_sensor_analysis_data(
-                payload.get("question"),
                 payload.get("latest_reading"),
             )
         else:
