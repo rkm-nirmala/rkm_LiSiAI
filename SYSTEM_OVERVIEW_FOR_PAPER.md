@@ -23,7 +23,7 @@ Ketentuan penulisan:
 - **Jenis:** prototipe aplikasi web berbasis Flask dengan antarmuka berbahasa Indonesia.
 - **Tujuan fungsional:** membantu alur ekstraksi teks dari sampul buku; menerima dan menampilkan satu bacaan sensor ESP32 terbaru; meneruskan konteks buku atau sensor ke Ollama yang di-host pada layanan lokal.
 - **Konteks penggunaan yang dituju:** akses informasi dan pemantauan tanaman, termasuk kemungkinan penggunaan pada lingkungan dengan internet terbatas. Kesesuaian dan manfaat untuk kondisi lapangan 3T masih perlu diuji langsung.
-- **Teknologi inti:** Python, Flask, Pillow, pytesseract/Tesseract OCR, OpenCV (`opencv-python-headless`), JavaScript browser, serta Ollama melalui HTTP API lokal.
+- **Teknologi inti:** Python, Flask, Pillow, pytesseract/Tesseract OCR, EasyOCR/PyTorch sebagai alternatif OCR, OpenCV (`opencv-python-headless`), JavaScript browser, serta Ollama melalui HTTP API lokal.
 - **Antarmuka:** HTML/Jinja dan CSS responsif; pemrosesan kamera serta komunikasi endpoint dilakukan JavaScript di browser.
 
 ## 2. Gambaran arsitektur
@@ -32,14 +32,14 @@ Ketentuan penulisan:
 Perangkat pengguna / browser
   ├─ /scan: kamera → frame kecil → Flask /detect-text
   │                         ← deteksi kontur dan baris teks
-  │         capture → Flask /ocr → Pillow → Tesseract
+  │         capture → Flask /ocr → OCR engine terkonfigurasi
   │         teks OCR yang diedit → Flask /ask
   └─ /monitor: GET /sensor → tampilan data
                pertanyaan + bacaan terbaru → Flask /ask
 
 Flask (server aplikasi lokal)
   ├─ /detect-text → lib/cover_detector.py → OpenCV
-  ├─ /ocr         → lib/ocr_service.py → Pillow + Tesseract
+  ├─ /ocr         → engine terpilih (Tesseract atau EasyOCR)
   ├─ /sensor      → satu bacaan terbaru dalam memori proses
   └─ /ask         → data/ + prompts/ + lib/ask_service.py
                                       ↓
@@ -57,7 +57,7 @@ Browser berkomunikasi dengan aplikasi Flask. Deteksi OpenCV berjalan pada server
 | `/dashboard` | GET | Halaman pilihan fitur scan sampul dan monitor tanaman. |
 | `/scan` | GET | Membuka kamera browser, menampilkan overlay deteksi, mengambil gambar otomatis atau manual, mengirim gambar untuk OCR, menyediakan teks untuk diedit dan tombol analisis AI. |
 | `/detect-text` | POST | Menerima frame gambar multipart pada field `image`; mengembalikan status deteksi, koordinat kontur sampul bila ditemukan, jumlah baris teks, dan kotak teks. |
-| `/ocr` | GET, POST | GET memberikan petunjuk request dan bahasa yang didukung. POST menerima gambar pada field multipart `image` dan field opsional `language` (`ind`, `eng`, atau `ind+eng`; default `ind+eng`). |
+| `/ocr` | GET, POST | GET memberikan petunjuk request, bahasa, engine aktif, dan engine tersedia. POST menerima gambar pada field multipart `image` dan field opsional `language` (`ind`, `eng`, atau `ind+eng`; default `ind+eng`). Engine dipilih pada konfigurasi server `OCR_ENGINE`. |
 | `/sensor` | GET, POST | POST menerima JSON bacaan sensor dan menggantikan bacaan sebelumnya. GET mengembalikan satu bacaan terbaru sebagai `{"reading": ...}`, atau `{"reading": null}` bila belum ada. |
 | `/monitor` | GET | Menampilkan pembacaan sensor terbaru dan formulir pertanyaan AI. Data dimuat ulang dari `/sensor` setiap lima detik. |
 | `/ask` | POST | Memvalidasi task dan data, membaca prompt yang sesuai, memanggil Ollama lokal, lalu mengembalikan jawaban, model, dan task. |
@@ -125,7 +125,9 @@ Task yang diterima `/ask` adalah `book_scan` dan `sensor_analysis`. Teks scan di
 
 ### Pemrosesan OCR
 
-`lib/ocr_service.py`:
+Endpoint `/ocr` menggunakan implementasi yang dipilih oleh konfigurasi Flask `OCR_ENGINE`, yaitu `tesseract` (default) atau `easyocr`. Pemilihan engine adalah konfigurasi server, bukan parameter dari browser, sehingga alur kamera dan kontrak endpoint tetap sama saat backend diganti. Respons sukses menyertakan teks, bahasa, confidence pada skala 0–100 atau `null`, dan nama engine. Walau disajikan pada rentang numerik yang sama, confidence bawaan engine berbeda definisi dan tidak dapat dibandingkan langsung sebagai probabilitas terkalibrasi.
+
+`lib/ocr_service.py` (Tesseract):
 
 - Membaca format gambar yang dikenali Pillow; file tidak dipercaya hanya berdasarkan MIME type.
 - Menolak gambar dengan resolusi lebih dari 25 megapiksel.
@@ -134,6 +136,13 @@ Task yang diterima `/ask` adalah `book_scan` dan `sensor_analysis`. Teks scan di
 - Memanggil pytesseract dengan `--oem 1 --psm 11` untuk deteksi teks dengan tata letak relatif bebas.
 - Mengembalikan teks yang disusun per baris, bahasa, dan rata-rata confidence kata yang memiliki confidence nonnegatif. Jika tidak ada kata yang dikenali, confidence adalah `null`.
 - Endpoint membatasi request body sampai 16 MB.
+
+`lib/easyocr_service.py` (EasyOCR):
+
+- Menggunakan model bahasa EasyOCR `id` untuk bahasa Indonesia dan `en` untuk bahasa Inggris; pilihan gabungan dipetakan ke kedua model.
+- Mengoreksi orientasi EXIF, mengubah gambar menjadi RGB, dan memperbesar gambar kecil tanpa menerapkan preprocessing grayscale khusus Tesseract.
+- Menjalankan inference pada CPU (`gpu=False`), menggunakan kembali Reader dalam proses Flask, mengelompokkan hasil deteksi ke baris, serta mengubah confidence ke skala 0–100.
+- Memakai `EASYOCR_MODEL_DIRECTORY` untuk direktori model dan `EASYOCR_DOWNLOAD_ENABLED` untuk mengizinkan atau menolak unduhan bobot ketika model tidak tersedia. Unduhan dinonaktifkan secara default; operasi offline memerlukan bobot yang sudah disiapkan sebelumnya.
 
 Bahasa antarmuka scan tidak meminta pemustaka memilih bahasa; scan mengirim nilai default `ind+eng`. Endpoint masih menyediakan parameter bahasa untuk pemanggil lain.
 
@@ -159,7 +168,9 @@ Teks OCR yang dikirim sebagai pesan user diperlakukan oleh system prompt sebagai
 
 ## 7. Konfigurasi dan menjalankan sistem
 
-Dependensi Python ada di `requirements.txt`. OCR juga memerlukan instalasi sistem Tesseract dan data bahasa Inggris/Indonesia. Ollama dan model harus disiapkan pada komputer server sebelum dapat digunakan tanpa internet.
+Dependensi Python ada di `requirements.txt`. Tesseract memerlukan executable sistem dan data bahasa Inggris/Indonesia. EasyOCR bergantung pada PyTorch dan bobot model bahasa yang perlu disiapkan sebelumnya untuk operasi offline. Ollama dan model harus disiapkan pada komputer server.
+
+Engine OCR dapat diganti dengan mengubah `app.config["OCR_ENGINE"]` di `app.py` menjadi `tesseract` atau `easyocr`, atau mengatur environment `OCR_ENGINE` sebelum server dijalankan. Untuk EasyOCR, `EASYOCR_MODEL_DIRECTORY` mengatur cache model dan `EASYOCR_DOWNLOAD_ENABLED` dinonaktifkan secara default. Jika perlu menyiapkan bobot dari internet, unduhan dapat diaktifkan secara eksplisit terlebih dahulu; matikan kembali setelah model tersedia untuk operasi offline.
 
 Model default dalam kode: `qwen2.5:3b`. Pengaturan:
 
@@ -189,8 +200,8 @@ python app.py
 - Tidak ada login, kontrol akses, autentikasi ESP32, TLS yang disediakan aplikasi, pembatasan laju, atau pengelolaan banyak perangkat. HTTPS untuk kamera perlu disediakan pada deployment.
 - `app.py` menjalankan server Flask development dengan `debug=True` ketika dieksekusi langsung; konfigurasi tersebut bukan rekomendasi deployment publik/produksi.
 - Detektor cover/text adalah heuristik OpenCV dan bisa gagal pada pencahayaan rendah, blur, perspektif ekstrem, sampul tanpa batas tegas, huruf dekoratif, ilustrasi mirip karakter, atau latar kompleks. Bentuk persegi dengan tulisan juga berpotensi salah dianggap sampul. Ia tidak mengenali identitas buku.
-- Deteksi teks untuk pemicu capture berbeda dari OCR final Tesseract. Deteksi keberadaan pola teks tidak membuktikan teks dapat dibaca dengan benar.
-- OCR dapat salah, khususnya karena resolusi, pantulan, orientasi, font, bahasa campuran, atau tata letak sampul.
+- Deteksi teks untuk pemicu capture berbeda dari engine OCR final yang dipilih. Deteksi keberadaan pola teks tidak membuktikan teks dapat dibaca dengan benar.
+- OCR Tesseract maupun EasyOCR dapat salah, khususnya karena resolusi, pantulan, orientasi, font, bahasa campuran, atau tata letak sampul.
 - AI menghasilkan jawaban dari model lokal; ringkasan isi buku tidak dapat dipastikan hanya dari teks sampul. Prompt meminta model mengakui keterbatasan, tetapi keluaran tetap perlu diverifikasi.
 - Keberhasilan komunikasi Ollama lokal bergantung pada service aktif, model tersedia, kapasitas perangkat, dan konfigurasi URL/timeout. Kinerja/kemampuan model belum dibandingkan.
 - Tidak ada angka performa/akurasi yang dapat disimpulkan dari keberadaan kode atau uji fungsi saja.
@@ -202,19 +213,19 @@ Implementasi kode dapat diperiksa untuk endpoint, validasi, payload, dan perilak
 Sebelum menyusun klaim hasil paper, rancang dan dokumentasikan setidaknya:
 
 1. **Dataset sampul**: jumlah dan sumber gambar, izin penggunaan, variasi jenis buku, bahasa, ukuran teks, kondisi cahaya, sudut, jarak, pantulan, latar, blur; pisahkan data tuning dan uji.
-2. **Kualitas OCR**: transkripsi ground truth dan metrik seperti Character Error Rate (CER) serta Word Error Rate (WER), cara normalisasi teks, dan jumlah sampel. Laporkan per kondisi/bahasa jika jumlah data mendukung.
+2. **Kualitas OCR**: bandingkan Tesseract dan EasyOCR pada gambar uji yang sama menggunakan transkripsi ground truth dan metrik seperti Character Error Rate (CER) serta Word Error Rate (WER), cara normalisasi teks, dan jumlah sampel. Laporkan per kondisi/bahasa jika jumlah data mendukung.
 3. **Deteksi dan auto-capture**: anotasi apakah sampul/teks terlihat, hitung true/false positive dan false negative, precision/recall/F1, false captures per durasi, waktu dari sampul stabil hingga capture, serta kondisi yang menyebabkan kegagalan. Definisikan ground truth dan ambang operasional sebelum tes.
 4. **Sistem sensor**: variasi payload valid/tidak valid, frekuensi request, pergantian perangkat, nilai ekstrem, perilaku restart dan kehilangan data. Bandingkan dengan alat ukur acuan hanya bila tersedia dan terkalibrasi.
 5. **AI lokal**: model dan versinya, quantization jika digunakan, konfigurasi Ollama, prompt yang diuji, kualitas factuality/relevansi dengan rubrik jelas, waktu respons, konsumsi RAM/CPU/GPU, serta penilaian manusia bila dilakukan.
 6. **Kegunaan dan konteks 3T**: jumlah/karakteristik pengguna, perangkat dan browser, kualitas jaringan lokal, kebutuhan listrik, literasi digital, persetujuan partisipan, prosedur etika, dan hasil observasi yang nyata. Jangan menyatakan kelayakan lapangan sebelum diuji.
 7. **Offline dan privasi**: catat prosedur memastikan request tidak keluar jaringan lokal, aset/dependensi yang dipasang, serta perilaku ketika internet tidak tersedia tetapi LAN/server masih beroperasi. Kamera tetap membutuhkan akses browser yang aman.
-8. **Keterulangan eksperimen**: versi kode, perangkat keras, OS, versi Tesseract dan traineddata, versi OpenCV/Pillow, model Ollama, konfigurasi kamera, tanggal, serta script/dataset uji bila boleh dibagikan.
+8. **Keterulangan eksperimen**: versi kode, perangkat keras, OS, versi Tesseract dan traineddata, versi EasyOCR/PyTorch dan bobot model, versi OpenCV/Pillow, model Ollama, konfigurasi kamera, tanggal, serta script/dataset uji bila boleh dibagikan.
 
 ## 10. Ringkasan kontribusi yang dapat diusulkan (belum diklaim terbukti)
 
 Sebagai fokus paper prototipe, kontribusi dapat dirumuskan sebagai:
 
-- integrasi pipeline kamera browser, deteksi pola teks/area sampul dengan OpenCV lokal, dan OCR Tesseract untuk alur scan interaktif;
+- integrasi pipeline kamera browser, deteksi pola teks/area sampul dengan OpenCV lokal, dan dua pilihan engine OCR (Tesseract atau EasyOCR) untuk alur scan interaktif;
 - antarmuka scan dua kolom yang menampilkan preview/overlay, memungkinkan koreksi teks OCR, dan meneruskan teks yang sudah diedit ke model lokal;
 - jembatan `/ask` dengan instruksi dan struktur data terpisah untuk task buku dan sensor;
 - penerimaan serta visualisasi satu bacaan ESP32 terbaru dan konteks bacaan tersebut untuk pertanyaan AI.
