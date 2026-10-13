@@ -82,12 +82,26 @@ Contoh payload yang diterima `/sensor`:
 
 `device` dan `status` wajib berupa string yang tidak kosong. Ketujuh field pengukuran pada contoh wajib numerik; boolean, nilai nonnumerik, serta float non-finite ditolak. Field lain tidak secara eksplisit ditolak dan payload yang diterima disimpan sebagai `data`. Setiap bacaan dibungkus metadata `id` dan `received_at` dalam UTC. Validasi belum memeriksa rentang nilai, kalibrasi, identitas perangkat, autentikasi, atau kewajaran fisik pengukuran.
 
-Contoh request `/ask` untuk hasil scan:
+Contoh request `/ask` untuk hasil scan. Server menambahkan `catalog_match` dari pencarian lokal sebelum meneruskannya ke AI:
 
 ```json
 {
   "task": "book_scan",
-  "extracted_text": "Judul buku Nama Penulis"
+  "extracted_text": "Judul buku Nama Penulis",
+  "catalog_match": {
+    "status": "matched",
+    "match_score": 100.0,
+    "match_reason": "isbn",
+    "book": {
+      "judul": "Judul buku",
+      "pengarang": "Nama Penulis",
+      "isbn": "9780000000000",
+      "sinopsis": "Sinopsis yang diisi pada katalog",
+      "penerbit": "Penerbit",
+      "tahun": "2025"
+    },
+    "warning": null
+  }
 }
 ```
 
@@ -108,7 +122,7 @@ Contoh request `/ask` untuk data sensor:
 }
 ```
 
-Task yang diterima `/ask` adalah `book_scan` dan `sensor_analysis`. Teks scan dibatasi 12.000 karakter; pertanyaan sensor dibatasi 2.000 karakter. Jika layanan Ollama tidak tersedia, endpoint mengembalikan error HTTP seperti 503/504, bukan jawaban AI tiruan.
+Task yang diterima `/ask` adalah `book_scan` dan `sensor_analysis`. Teks scan dibatasi 12.000 karakter; bacaan sensor dikirim sebagai snapshot. Jika layanan Ollama tidak tersedia, endpoint mengembalikan error HTTP seperti 503/504, bukan jawaban AI tiruan.
 
 ## 4. Alur scan sampul buku
 
@@ -121,6 +135,7 @@ Task yang diterima `/ask` adalah `book_scan` dan `sensor_analysis`. Teks scan di
 7. Auto-capture mensyaratkan teks terdeteksi sedikitnya tiga kali berturut-turut, perubahan rata-rata luminansi frame kecil (threshold `< 8`), dan kestabilan sekurangnya 1,4 detik. Tidak ada countdown. Pengguna juga dapat menekan tombol capture manual.
 8. Setelah capture, kamera dihentikan dan foto tetap terlihat sebagai preview. Gambar resolusi capture dibatasi dengan sisi lebar maksimum 1.600 piksel, dikodekan sebagai JPEG kualitas 0,9, lalu dikirim ke `/ocr`.
 9. Hasil OCR diubah menjadi satu baris dengan merapikan whitespace, ditampilkan pada textarea yang dapat diedit, dan dapat dikirim melalui tombol AI ke task `book_scan`.
+10. Di server, `data/book_catalog.py` mencari ISBN pada teks OCR dan jika tidak ditemukan memberi peringkat kandidat berdasarkan kemiripan judul/pengarang di `data/db.csv`. Hanya kandidat teratas yang disertakan ke konteks AI. Hasil di bawah ambang heuristik tetap dikirim sebagai kandidat dengan peringatan.
 
 ### Pemrosesan OCR
 
@@ -142,7 +157,7 @@ Bahasa antarmuka scan tidak meminta pemustaka memilih bahasa; scan mengirim nila
 1. Perangkat ESP32 mengirim JSON payload ke `POST /sensor`.
 2. Flask memvalidasi keberadaan `device`, `status`, dan tujuh nilai numerik pengukuran; lalu mengganti `latest_sensor_reading` dengan bacaan yang baru diterima.
 3. Halaman `/monitor` mengambil `GET /sensor`, menampilkan status perangkat, kelembapan tanah, suhu tanah, suhu dan kelembapan udara, serta waktu penerimaan. Polling berjalan setiap lima detik; tombol refresh juga tersedia.
-4. Ketika pengguna mengajukan pertanyaan, halaman mengirim task `sensor_analysis`, pertanyaan, dan snapshot bacaan terbaru ke `/ask`.
+4. Ketika pengguna menekan tombol analisis, halaman mengirim task `sensor_analysis` dan snapshot bacaan terbaru ke `/ask`; prompt tetap menentukan tugas tanpa input pertanyaan manual.
 5. Prompt sensor menginstruksikan Ollama menjawab berdasarkan data yang dikirim, tidak mengarang pengukuran, dan menyebutkan ketidakpastian satuan/konteks.
 
 Walaupun UI menyebut sensor DS18B20 dan DHT11, backend menerima nilai yang diposting oleh perangkat dan tidak memverifikasi model fisik atau kalibrasi sensornya. Nama/unit itu harus diperlakukan sebagai rancangan integrasi, bukan hasil verifikasi perangkat keras.
@@ -150,8 +165,10 @@ Walaupun UI menyebut sensor DS18B20 dan DHT11, backend menerima nilai yang dipos
 ## 6. Pemisahan prompt dan data untuk AI
 
 - `prompts/book_scan.txt`: instruksi berbahasa Indonesia untuk mengidentifikasi judul/penulis jika terlihat, memberi ringkasan yang hanya didukung teks sampul, tidak mengarang fakta, dan mengakui ketidakpastian OCR.
+- `data/db.csv`: katalog lokal dengan header `judul,pengarang,isbn,sinopsis,penerbit,tahun`; file awal di repository hanya menyediakan header dan belum berisi data bibliografi.
+- `data/book_catalog.py`: pencarian ISBN dan pemeringkatan kandidat judul/pengarang menggunakan kemiripan string; ambang `65%` adalah heuristik awal, bukan confidence statistik yang telah divalidasi. Kandidat terbaik tetap disertakan jika skor rendah, bersama peringatan.
 - `prompts/sensor_analysis.txt`: instruksi tetap untuk menganalisis bacaan sensor terbaru, menyebut nilai/satuan jika tersedia, serta tidak membuat pengukuran, ambang ideal, atau diagnosis.
-- `data/book_scan.py`: validasi teks hasil scan dan batas panjang, membentuk objek `extracted_text`.
+- `data/book_scan.py`: validasi teks hasil scan dan batas panjang, membentuk objek `extracted_text` bersama hasil pencarian katalog.
 - `data/sensor_analysis.py`: memvalidasi dan membentuk objek `latest_reading`; tidak ada prompt/pertanyaan manual dari halaman monitor.
 - `lib/ask_service.py`: memilih file prompt berdasarkan task, mengambil pengaturan Ollama dari environment, mengirim system prompt dan JSON data sebagai pesan user ke `POST /api/chat`, lalu memvalidasi respons.
 

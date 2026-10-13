@@ -4,6 +4,7 @@ from itertools import count
 
 from flask import Flask, jsonify, render_template, request
 
+from data.book_catalog import BookCatalogError
 from data.book_scan import BookScanDataError, build_book_scan_data
 from data.sensor_analysis import SensorAnalysisDataError, build_sensor_analysis_data
 from lib.ask_service import AskServiceError, ask_ollama
@@ -83,6 +84,8 @@ def ask():
             return jsonify(error="Field 'task' harus 'book_scan' atau 'sensor_analysis'."), 400
     except (BookScanDataError, SensorAnalysisDataError) as error:
         return jsonify(error=str(error)), 400
+    except BookCatalogError as error:
+        return jsonify(error=str(error)), 500
 
     try:
         return jsonify(ask_ollama(task, data))
